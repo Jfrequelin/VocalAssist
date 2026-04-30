@@ -53,6 +53,15 @@ class TestLeonClient(unittest.TestCase):
         ):
             self.assertIsNone(client.ask("salut"))
 
+    def test_ask_retries_then_succeeds(self) -> None:
+        client = LeonClient(base_url="http://localhost:1337", retry_attempts=2)
+        with patch(
+            "src.assistant.leon_client.request.urlopen",
+            side_effect=[error.URLError("temporary"), _FakeResponse('{"answer":"OK apres retry"}')],
+        ) as mocked:
+            self.assertEqual(client.ask("salut"), "OK apres retry")
+            self.assertEqual(mocked.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

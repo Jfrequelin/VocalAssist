@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from time import sleep
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
@@ -28,13 +29,23 @@ class LeonClient:
     base_url: str
     endpoint: str = "/api/query"
     timeout_seconds: float = 5.0
+    retry_attempts: int = 1
+    retry_backoff_seconds: float = 0.0
 
     @classmethod
     def from_env(cls) -> "LeonClient":
         base_url = os.getenv("LEON_API_URL", "http://localhost:1337")
         endpoint = os.getenv("LEON_API_ENDPOINT", "/api/query")
         timeout = float(os.getenv("LEON_TIMEOUT_SECONDS", "5"))
-        return cls(base_url=base_url.rstrip("/"), endpoint=endpoint, timeout_seconds=timeout)
+        retry_attempts = int(os.getenv("LEON_RETRY_ATTEMPTS", "1"))
+        retry_backoff = float(os.getenv("LEON_RETRY_BACKOFF_SECONDS", "0"))
+        return cls(
+            base_url=base_url.rstrip("/"),
+            endpoint=endpoint,
+            timeout_seconds=timeout,
+            retry_attempts=max(0, retry_attempts),
+            retry_backoff_seconds=max(0.0, retry_backoff),
+        )
 
     def ask(self, message: str) -> str | None:
         payload = json.dumps({"query": message}).encode("utf-8")
@@ -46,10 +57,20 @@ class LeonClient:
             method="POST",
         )
 
-        try:
-            with request.urlopen(req, timeout=self.timeout_seconds) as response:
-                raw = response.read().decode("utf-8")
-        except (error.URLError, TimeoutError, ValueError, OSError):
+        attempts = self.retry_attempts + 1
+        raw: str | None = None
+        for attempt in range(attempts):
+            try:
+                with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                    raw = response.read().decode("utf-8")
+                break
+            except (error.URLError, TimeoutError, ValueError, OSError):
+                if attempt + 1 >= attempts:
+                    return None
+                if self.retry_backoff_seconds > 0:
+                    sleep(self.retry_backoff_seconds)
+
+        if raw is None:
             return None
 
         try:

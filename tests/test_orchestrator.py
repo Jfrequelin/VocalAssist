@@ -4,10 +4,15 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from src.assistant.orchestrator import handle_message
+from src.assistant.orchestrator import LEON_CIRCUIT_BREAKER, handle_message, reset_leon_circuit_breaker
 
 
 class TestOrchestrator(unittest.TestCase):
+    def setUp(self) -> None:
+        reset_leon_circuit_breaker()
+        LEON_CIRCUIT_BREAKER.failure_threshold = 3
+        LEON_CIRCUIT_BREAKER.cooldown_seconds = 30.0
+
     def test_local_intent_keeps_local_source(self) -> None:
         reply = handle_message("quelle heure est-il", use_leon_fallback=True)
         self.assertEqual(reply.source, "local")
@@ -61,6 +66,35 @@ class TestOrchestrator(unittest.TestCase):
 
         self.assertEqual(reply.source, "local")
         self.assertEqual(reply.routing_trace.get("reason"), "fallback_disabled")
+
+    @patch("src.assistant.orchestrator.LeonClient")
+    def test_repeated_failures_open_circuit(self, mock_leon_cls: Any) -> None:
+        LEON_CIRCUIT_BREAKER.failure_threshold = 2
+        LEON_CIRCUIT_BREAKER.cooldown_seconds = 60.0
+        mock_leon: Any = mock_leon_cls.from_env.return_value
+        mock_leon.ask.return_value = None
+
+        first = handle_message("question inconnue 1", use_leon_fallback=True)
+        second = handle_message("question inconnue 2", use_leon_fallback=True)
+        third = handle_message("question inconnue 3", use_leon_fallback=True)
+
+        self.assertEqual(first.source, "fallback-error")
+        self.assertEqual(second.source, "fallback-error")
+        self.assertEqual(third.routing_trace.get("reason"), "circuit_open")
+
+    @patch("src.assistant.orchestrator.LeonClient")
+    def test_success_resets_circuit_breaker(self, mock_leon_cls: Any) -> None:
+        LEON_CIRCUIT_BREAKER.failure_threshold = 2
+        LEON_CIRCUIT_BREAKER.cooldown_seconds = 60.0
+        mock_leon: Any = mock_leon_cls.from_env.return_value
+        mock_leon.ask.side_effect = [None, "Reponse Leon"]
+
+        first = handle_message("question inconnue 1", use_leon_fallback=True)
+        second = handle_message("question inconnue 2", use_leon_fallback=True)
+
+        self.assertEqual(first.source, "fallback-error")
+        self.assertEqual(second.source, "leon")
+        self.assertEqual(LEON_CIRCUIT_BREAKER.consecutive_failures, 0)
 
 
 if __name__ == "__main__":
