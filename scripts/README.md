@@ -154,6 +154,18 @@ Ces fichiers regroupent les issues par macro (`MACRO-XXX`) et par type (`macro`,
 cat .tickets-local/INDEX.md
 ```
 
+## Robustesse Edge (satellite)
+
+Variables utiles pour le prototype edge:
+
+- `EDGE_BACKEND_URL`: URL backend cible (défaut `http://127.0.0.1:8081`)
+- `EDGE_DEVICE_ID`: identifiant du satellite
+- `EDGE_WAKE_WORD`: mot-clé local (défaut `nova`)
+- `EDGE_SEND_RETRY_ATTEMPTS`: nombre de retries réseau (défaut `2`)
+- `EDGE_SEND_RETRY_BACKOFF_SECONDS`: backoff entre retries (défaut `0.1`)
+
+Matrice de tests terrain et stratégie réseau: `docs/EDGE-NETWORK-VALIDATION.md`.
+
 ### En CI/CD
 
 ```yaml

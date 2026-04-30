@@ -91,6 +91,57 @@ class TestEdgeAudio(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_send_retries_and_eventually_succeeds(self) -> None:
+        attempts = {"count": 0}
+
+        class _FlakyHandler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                attempts["count"] += 1
+                if attempts["count"] == 1:
+                    self.send_response(503)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+
+                content_length = int(self.headers.get("Content-Length", "0"))
+                raw = self.rfile.read(content_length)
+                status, response = handle_edge_audio_request(raw)
+                body = json.dumps(response).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = HTTPServer(("127.0.0.1", 0), _FlakyHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = cast(tuple[str, int], server.server_address)
+            payload = build_edge_audio_payload(b"edge-audio", device_id="esp32-edge")
+            response = send_edge_audio_payload(
+                payload,
+                base_url=f"http://{host}:{port}",
+                retry_attempts=2,
+                retry_backoff_seconds=0.0,
+            )
+            self.assertIsNotNone(response)
+            self.assertEqual(attempts["count"], 2)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_send_returns_none_when_backend_down(self) -> None:
+        payload = build_edge_audio_payload(b"edge-audio", device_id="esp32-edge")
+        response = send_edge_audio_payload(
+            payload,
+            base_url="http://127.0.0.1:9",
+            timeout_seconds=0.05,
+            retry_attempts=1,
+            retry_backoff_seconds=0.0,
+        )
+        self.assertIsNone(response)
+
 
 if __name__ == "__main__":
     unittest.main()

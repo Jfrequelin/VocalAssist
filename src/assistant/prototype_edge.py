@@ -46,6 +46,8 @@ def _process_audio_segment(
     wake_word: str,
     device_id: str,
     base_url: str,
+    retry_attempts: int,
+    retry_backoff_seconds: float,
     controller: EdgeDeviceController,
     tts: MockTextToSpeech,
 ) -> None:
@@ -59,11 +61,17 @@ def _process_audio_segment(
     payload = build_edge_audio_payload(decision.command.encode("utf-8"), device_id=device_id)
     controller.mark_sending()
     print(f"Edge(state): {controller.describe()}")
-    response = send_edge_audio_payload(payload, base_url=base_url)
+    response = send_edge_audio_payload(
+        payload,
+        base_url=base_url,
+        retry_attempts=retry_attempts,
+        retry_backoff_seconds=retry_backoff_seconds,
+    )
 
     if not response:
         controller.mark_error()
         print("Edge: envoi echoue ou reponse invalide du backend")
+        print("Edge: mode degrade active (reconnexion automatique au prochain segment)")
         print(f"Edge(state): {controller.describe()}")
         return
 
@@ -90,6 +98,8 @@ def run_prototype_edge() -> None:
     base_url = os.getenv("EDGE_BACKEND_URL", "http://127.0.0.1:8081")
     device_id = os.getenv("EDGE_DEVICE_ID", "esp32-s3-dev")
     wake_word = os.getenv("EDGE_WAKE_WORD", "nova")
+    retry_attempts = int(os.getenv("EDGE_SEND_RETRY_ATTEMPTS", "2"))
+    retry_backoff_seconds = float(os.getenv("EDGE_SEND_RETRY_BACKOFF_SECONDS", "0.1"))
     controller = EdgeDeviceController()
     tts = MockTextToSpeech()
 
@@ -104,4 +114,13 @@ def run_prototype_edge() -> None:
         if _handle_control_command(raw, controller):
             continue
 
-        _process_audio_segment(raw, wake_word, device_id, base_url, controller, tts)
+        _process_audio_segment(
+            raw,
+            wake_word,
+            device_id,
+            base_url,
+            retry_attempts,
+            retry_backoff_seconds,
+            controller,
+            tts,
+        )

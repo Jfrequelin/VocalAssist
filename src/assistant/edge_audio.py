@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
+from time import sleep
 from time import time
 from typing import Any, cast
 from urllib import error, request
@@ -96,6 +97,8 @@ def send_edge_audio_payload(
     base_url: str,
     endpoint: str = "/edge/audio",
     timeout_seconds: float = 3.0,
+    retry_attempts: int = 1,
+    retry_backoff_seconds: float = 0.0,
 ) -> dict[str, Any] | None:
     url = f"{base_url.rstrip('/')}{endpoint}"
     body = json.dumps(payload.to_dict()).encode("utf-8")
@@ -106,10 +109,20 @@ def send_edge_audio_payload(
         method="POST",
     )
 
-    try:
-        with request.urlopen(req, timeout=timeout_seconds) as response:
-            raw = response.read().decode("utf-8")
-    except (error.URLError, TimeoutError, ValueError):
+    attempts = max(0, retry_attempts) + 1
+    raw: str | None = None
+    for idx in range(attempts):
+        try:
+            with request.urlopen(req, timeout=timeout_seconds) as response:
+                raw = response.read().decode("utf-8")
+            break
+        except (error.URLError, TimeoutError, ValueError):
+            if idx + 1 >= attempts:
+                return None
+            if retry_backoff_seconds > 0:
+                sleep(retry_backoff_seconds)
+
+    if raw is None:
         return None
 
     try:
