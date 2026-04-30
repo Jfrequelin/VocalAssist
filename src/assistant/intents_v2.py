@@ -151,3 +151,118 @@ class IntentRegistry:
                 return intent_id
 
         return None
+
+
+class SlotExtractor:
+    """Generic slot extraction from user input based on slot definitions."""
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        """Normalize text for matching."""
+        lowered = text.lower()
+        decomposed = unicodedata.normalize("NFKD", lowered)
+        no_diacritics = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+        return no_diacritics
+
+    def extract(
+        self,
+        text: str,
+        slots_def: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Extract slots from text based on slot definitions."""
+        normalized_text = self._normalize_text(text)
+        extracted_slots: dict[str, Any] = {}
+
+        for slot_name, slot_config in slots_def.items():
+            slot_type = slot_config.get("type")
+
+            if slot_type == SlotType.ENUM:
+                value = self._extract_enum(normalized_text, slot_config)
+                if value is not None:
+                    extracted_slots[slot_name] = value
+
+            elif slot_type == SlotType.NUMERIC:
+                value = self._extract_numeric(normalized_text, slot_config)
+                if value is not None:
+                    extracted_slots[slot_name] = value
+
+            elif slot_type == SlotType.STRING:
+                value = self._extract_string(normalized_text, slot_config)
+                if value is not None:
+                    extracted_slots[slot_name] = value
+
+            elif slot_type == SlotType.BOOLEAN:
+                value = self._extract_boolean(normalized_text, slot_config)
+                if value is not None:
+                    extracted_slots[slot_name] = value
+
+        return extracted_slots
+
+    def _extract_enum(self, text: str, config: dict[str, Any]) -> str | None:
+        """Extract ENUM slot by matching against enum values."""
+        values = config.get("values", [])
+
+        for value in values:
+            normalized_value = self._normalize_text(value)
+
+            if " " in normalized_value:
+                # Multi-word: substring match
+                if normalized_value in text:
+                    return value
+            else:
+                # Single-word: word boundary match
+                pattern = rf"\b{re.escape(normalized_value)}\b"
+                if re.search(pattern, text):
+                    return value
+
+        return None
+
+    def _extract_numeric(self, text: str, config: dict[str, Any]) -> int | None:
+        """Extract NUMERIC slot by finding numbers in text."""
+        # Find first number in text
+        match = re.search(r"(-?\d+(?:[.,]\d+)?)", text)
+        if not match:
+            return None
+
+        value_str = match.group(1).replace(",", ".")
+        try:
+            value = int(float(value_str))
+        except ValueError:
+            return None
+
+        # Validate against min/max if specified
+        min_val = config.get("min")
+        max_val = config.get("max")
+
+        if min_val is not None and value < min_val:
+            return None
+        if max_val is not None and value > max_val:
+            return None
+
+        return value
+
+    def _extract_string(self, text: str, config: dict[str, Any]) -> str | None:
+        """Extract STRING slot (simple extraction)."""
+        # For STRING slots, we could use regex patterns or extract after keywords
+        # For now, return None (can be extended with more sophisticated logic)
+        return None
+
+    def _extract_boolean(self, text: str, config: dict[str, Any]) -> bool | None:
+        """Extract BOOLEAN slot."""
+        true_keywords = config.get("true_keywords", ["oui", "yes", "vrai", "true", "on", "allume", "active"])
+        false_keywords = config.get("false_keywords", ["non", "no", "faux", "false", "off", "eteins", "desactive"])
+
+        for keyword in true_keywords:
+            normalized_keyword = self._normalize_text(keyword)
+            pattern = rf"\b{re.escape(normalized_keyword)}\b"
+            if re.search(pattern, text):
+                return True
+
+        for keyword in false_keywords:
+            normalized_keyword = self._normalize_text(keyword)
+            pattern = rf"\b{re.escape(normalized_keyword)}\b"
+            if re.search(pattern, text):
+                return False
+
+        return None
+
