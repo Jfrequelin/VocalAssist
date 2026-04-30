@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from time import perf_counter
+from uuid import uuid4
 
 from src.assistant.orchestrator import handle_message
 from src.assistant.voice_pipeline import (
@@ -75,8 +76,10 @@ def run_prototype_voice() -> None:
             continue
 
         orchestrator_start = perf_counter()
-        reply = handle_message(message, use_leon_fallback=True)
+        correlation_id = str(uuid4())
+        reply = handle_message(message, use_leon_fallback=True, correlation_id=correlation_id)
         orchestrator_ms = (perf_counter() - orchestrator_start) * 1000
+        print(f"Assistant(trace): cid={reply.correlation_id} source={reply.source}")
         if reply.source == "leon":
             print("Assistant: reponse fournie par Leon")
         elif reply.source == "fallback-error":

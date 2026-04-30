@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
 from src.assistant.orchestrator import handle_message
 
 WAKE_WORD = "nova"
@@ -32,7 +34,9 @@ def run_prototype() -> None:
             print("Assistant: fallback Leon actif si intent inconnu.")
             continue
 
-        reply = handle_message(message, use_leon_fallback=True)
+        correlation_id = str(uuid4())
+        reply = handle_message(message, use_leon_fallback=True, correlation_id=correlation_id)
+        print(f"Assistant(trace): cid={reply.correlation_id} source={reply.source}")
         if reply.source == "leon":
             print("Assistant: reponse fournie par Leon")
         elif reply.source == "fallback-error":

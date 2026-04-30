@@ -132,6 +132,16 @@ cat .tickets-local/INDEX.md
 }
 ```
 
+### Mapping macro -> issues
+
+La synchronisation génère aussi une vue stable d'alignement backlog local/GitHub:
+
+- `doc/tickets/macro_issue_mapping.json`
+- `doc/tickets/MACRO-ISSUE-MAPPING.md`
+
+Ces fichiers regroupent les issues par macro (`MACRO-XXX`) et par type (`macro`, `task`,
+`subticket`, `atomic-task`) pour vérifier rapidement qu'il n'y a pas d'ambiguïté.
+
 ## 🔄 Workflow recommandé
 
 ### Quotidien en boucle courte

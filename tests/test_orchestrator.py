@@ -18,6 +18,13 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(reply.source, "local")
         self.assertEqual(reply.intent, "time")
         self.assertEqual(reply.routing_trace.get("route"), "local")
+        self.assertTrue(reply.correlation_id)
+        self.assertEqual(reply.routing_trace.get("correlation_id"), reply.correlation_id)
+
+    def test_explicit_correlation_id_is_propagated(self) -> None:
+        reply = handle_message("quelle heure est-il", use_leon_fallback=True, correlation_id="cid-123")
+        self.assertEqual(reply.correlation_id, "cid-123")
+        self.assertEqual(reply.routing_trace.get("correlation_id"), "cid-123")
 
     @patch("src.assistant.orchestrator.LeonClient")
     def test_critical_local_intent_does_not_call_leon(self, mock_leon_cls: Any) -> None:

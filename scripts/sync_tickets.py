@@ -11,26 +11,77 @@ Usage:
 import os
 import json
 import argparse
-import requests
+import subprocess
+import re
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+from typing import Optional, List, Dict, Any, TypedDict, cast
+
+
+IssueData = Dict[str, Any]
+QueryParams = Dict[str, str | int]
+
+
+class IssueRef(TypedDict):
+    number: int
+    title: str
+    state: str
+    url: str
+
+
+class MacroCounts(TypedDict):
+    total: int
+    open: int
+    closed: int
+
+
+class MacroEntry(TypedDict):
+    macro_code: str
+    issues: dict[str, list[IssueRef]]
+    counts: MacroCounts
+
+
+class MacroIssueMapping(TypedDict):
+    generated_at: str
+    owner: str
+    repo: str
+    macros: dict[str, MacroEntry]
+    unmatched_issues: list[int]
 
 
 class GitHubTicketSync:
     """Synchronise les tickets GitHub vers des fichiers markdown locaux."""
     
     GITHUB_API = "https://api.github.com"
+    ISSUE_KINDS = ["macro", "task", "subticket", "atomic-task", "other"]
     
     def __init__(self, owner: str, repo: str, token: Optional[str] = None):
         self.owner = owner
         self.repo = repo
-        self.token = token or os.getenv("GITHUB_TOKEN")
-        self.output_dir = Path(".tickets-local")
+        self.token = token or os.getenv("GITHUB_TOKEN") or self._load_gh_token()
+        self.output_dir = Path("doc/tickets")
         self.headers = self._build_headers()
         
         if not self.token:
-            print("⚠️  Avertissement: GITHUB_TOKEN non configuré. Limité à 60 req/h (au lieu de 5000).")
+            print("⚠️  Avertissement: aucun token GitHub detecte. Limite a 60 req/h (au lieu de 5000).")
+
+    def _load_gh_token(self) -> Optional[str]:
+        """Recupere le token de gh si l'utilisateur est deja authentifie."""
+        try:
+            result = subprocess.run(
+                ["gh", "auth", "token"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            return None
+
+        token = result.stdout.strip()
+        return token or None
     
     def _build_headers(self) -> Dict[str, str]:
         """Construit les headers pour l'API GitHub."""
@@ -39,21 +90,24 @@ class GitHubTicketSync:
             headers["Authorization"] = f"token {self.token}"
         return headers
     
-    def _get(self, endpoint: str, params: Optional[Dict] = None) -> List[Dict[str, Any]]:
+    def _get(self, endpoint: str, params: Optional[QueryParams] = None) -> List[IssueData]:
         """Effectue une requête GET à l'API GitHub."""
-        url = f"{self.GITHUB_API}/repos/{self.owner}/{self.repo}/{endpoint}"
-        all_results = []
+        all_results: List[IssueData] = []
         page = 1
         
         while True:
-            query_params = params or {}
+            query_params: QueryParams = dict(params or {})
             query_params["page"] = page
             query_params["per_page"] = 100
-            
-            resp = requests.get(url, headers=self.headers, params=query_params)
-            resp.raise_for_status()
-            
-            data = resp.json()
+
+            query_string = urlencode(query_params)
+            url = f"{self.GITHUB_API}/repos/{self.owner}/{self.repo}/{endpoint}?{query_string}"
+            request = Request(url, headers=self.headers, method="GET")
+
+            with urlopen(request) as response:
+                response_body = response.read().decode("utf-8")
+
+            data = cast(List[IssueData], json.loads(response_body))
             if not data:
                 break
             
@@ -62,7 +116,7 @@ class GitHubTicketSync:
         
         return all_results
     
-    def _format_ticket_markdown(self, issue: Dict[str, Any]) -> str:
+    def _format_ticket_markdown(self, issue: IssueData) -> str:
         """Formate une issue GitHub en markdown."""
         template = f"""# [{issue['number']}] {issue['title']}
 
@@ -104,10 +158,10 @@ class GitHubTicketSync:
     
     def sync(self, state: str = "open", labels: Optional[List[str]] = None) -> Dict[str, int]:
         """Synchronise les tickets vers le dossier local."""
-        self.output_dir.mkdir(exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Construire les paramètres de requête
-        params = {"state": state}
+        params: QueryParams = {"state": state}
         if labels:
             params["labels"] = ",".join(labels)
         
@@ -140,7 +194,17 @@ class GitHubTicketSync:
         (self.output_dir / "INDEX.md").write_text(index_content, encoding="utf-8")
         
         # Créer un manifeste
-        manifest = {
+        mapping = self.build_macro_issue_mapping(issues)
+        (self.output_dir / "macro_issue_mapping.json").write_text(
+            json.dumps(mapping, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (self.output_dir / "MACRO-ISSUE-MAPPING.md").write_text(
+            self._generate_mapping_markdown(mapping),
+            encoding="utf-8",
+        )
+
+        manifest: Dict[str, Any] = {
             "synced_at": datetime.now().isoformat(),
             "owner": self.owner,
             "repo": self.repo,
@@ -149,6 +213,7 @@ class GitHubTicketSync:
             "total_issues": len(issues),
             "created_files": created_count,
             "updated_files": updated_count,
+            "mapping_file": "macro_issue_mapping.json",
         }
         (self.output_dir / "manifest.json").write_text(
             json.dumps(manifest, indent=2),
@@ -160,8 +225,132 @@ class GitHubTicketSync:
             "updated": updated_count,
             "total": len(issues),
         }
+
+    def _extract_macro_code(self, issue: IssueData) -> Optional[str]:
+        for label in issue.get("labels", []):
+            name = str(label.get("name", ""))
+            if re.fullmatch(r"macro-\d{3}", name):
+                return name.upper().replace("-", "-")
+
+        title = str(issue.get("title", ""))
+        match = re.search(r"MACRO-(\d{3})", title)
+        if match:
+            return f"MACRO-{match.group(1)}"
+        return None
+
+    def _classify_issue_kind(self, issue: IssueData) -> str:
+        label_names = {str(label.get("name", "")) for label in issue.get("labels", [])}
+        if "macro" in label_names:
+            return "macro"
+        if "task" in label_names:
+            return "task"
+        if "subticket" in label_names:
+            return "subticket"
+        if "atomic-task" in label_names:
+            return "atomic-task"
+        return "other"
+
+    def build_macro_issue_mapping(self, issues: List[IssueData]) -> MacroIssueMapping:
+        macros: dict[str, MacroEntry] = {}
+        unmatched: List[int] = []
+
+        for issue in issues:
+            number = int(issue.get("number", 0))
+            title = str(issue.get("title", ""))
+            state = str(issue.get("state", "open"))
+            kind = self._classify_issue_kind(issue)
+            macro_code = self._extract_macro_code(issue)
+
+            if not macro_code:
+                unmatched.append(number)
+                continue
+
+            macro_entry: MacroEntry = macros.setdefault(
+                macro_code,
+                {
+                    "macro_code": macro_code,
+                    "issues": {
+                        "macro": [],
+                        "task": [],
+                        "subticket": [],
+                        "atomic-task": [],
+                        "other": [],
+                    },
+                    "counts": {
+                        "total": 0,
+                        "open": 0,
+                        "closed": 0,
+                    },
+                },
+            )
+
+            issue_info: IssueRef = {
+                "number": number,
+                "title": title,
+                "state": state,
+                "url": str(issue.get("html_url", "")),
+            }
+            macro_entry["issues"][kind].append(issue_info)
+            macro_entry["counts"]["total"] += 1
+            if state == "open":
+                macro_entry["counts"]["open"] += 1
+            elif state == "closed":
+                macro_entry["counts"]["closed"] += 1
+
+        for macro_entry in macros.values():
+            for kind in self.ISSUE_KINDS:
+                bucket = macro_entry["issues"][kind]
+                bucket.sort(key=lambda item: item["number"])
+
+        return {
+            "generated_at": datetime.now().isoformat(),
+            "owner": self.owner,
+            "repo": self.repo,
+            "macros": dict(sorted(macros.items())),
+            "unmatched_issues": sorted(unmatched),
+        }
+
+    def _generate_mapping_markdown(self, mapping: MacroIssueMapping) -> str:
+        lines = [
+            "# Mapping Macro -> Issues GitHub",
+            "",
+            f"**Synchronisé**: {mapping['generated_at']}",
+            f"**Repo**: {mapping['owner']}/{mapping['repo']}",
+            "",
+        ]
+
+        for macro_code, data in mapping["macros"].items():
+            counts = data["counts"]
+            lines.extend(
+                [
+                    f"## {macro_code}",
+                    "",
+                    f"- Total: {counts['total']}",
+                    f"- Ouvert: {counts['open']}",
+                    f"- Fermé: {counts['closed']}",
+                    "",
+                ]
+            )
+            for kind in self.ISSUE_KINDS:
+                bucket = data["issues"][kind]
+                if not bucket:
+                    continue
+                lines.append(f"### {kind}")
+                lines.append("")
+                for issue in bucket:
+                    lines.append(
+                        f"- #{issue['number']} ({issue['state']}) {issue['title']}"
+                    )
+                lines.append("")
+
+        if mapping["unmatched_issues"]:
+            lines.append("## Issues sans macro détectée")
+            lines.append("")
+            lines.append(", ".join(f"#{number}" for number in mapping["unmatched_issues"]))
+
+        return "\n".join(lines).strip() + "\n"
     
-    def _generate_index(self, issues: List[Dict[str, Any]]) -> str:
+    def _generate_index(self, issues: List[IssueData]) -> str:
         """Génère un index markdown des tickets."""
         # Trier par statut et numéro
         open_issues = sorted([i for i in issues if i['state'] == 'open'], key=lambda x: x['number'])
@@ -179,12 +368,12 @@ class GitHubTicketSync:
 
 """
         for issue in open_issues:
-            labels_str = ' '.join([f"`{l['name']}`" for l in issue['labels']]) if issue['labels'] else ''
+            labels_str = ' '.join([f"`{label['name']}`" for label in issue['labels']]) if issue['labels'] else ''
             index += f"- **[#{issue['number']}]({issue['number']:04d}-*.md)** {issue['title']} {labels_str}\n"
         
         index += f"\n## 🔴 Fermés ({len(closed_issues)})\n\n"
         for issue in closed_issues:
-            labels_str = ' '.join([f"`{l['name']}`" for l in issue['labels']]) if issue['labels'] else ''
+            labels_str = ' '.join([f"`{label['name']}`" for label in issue['labels']]) if issue['labels'] else ''
             index += f"- **[#{issue['number']}]({issue['number']:04d}-*.md)** {issue['title']} {labels_str}\n"
         
         return index
@@ -206,12 +395,12 @@ def main():
     
     try:
         results = sync.sync(state=args.state, labels=args.labels)
-        print(f"\n✅ Synchronisation terminée!")
+        print("\n✅ Synchronisation terminée!")
         print(f"   Créés: {results['created']}")
         print(f"   Mis à jour: {results['updated']}")
         print(f"   Total: {results['total']}")
         print(f"   Dossier: {sync.output_dir.absolute()}")
-    except requests.exceptions.RequestException as e:
+    except (HTTPError, URLError) as e:
         print(f"❌ Erreur API GitHub: {e}")
         return 1
     
