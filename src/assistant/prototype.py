@@ -3,11 +3,11 @@ from __future__ import annotations
 from uuid import uuid4
 
 from src.assistant.orchestrator import handle_message
-
-WAKE_WORD = "nova"
+from src.assistant.wake_word_handler import WakeWordHandler
 
 
 def run_prototype() -> None:
+    handler = WakeWordHandler(wake_word="nova")
     print("=== Prototype assistant vocal (terminal) ===")
     print("Tapez vos commandes. Commencez par le mot cle 'nova'.")
     print("Exemple: nova quelle heure est-il")
@@ -19,19 +19,19 @@ def run_prototype() -> None:
         if not raw:
             continue
 
-        lowered = raw.lower()
-        if not lowered.startswith(WAKE_WORD):
+        result = handler.extract_command(raw)
+        if not result.activated:
             print("Assistant: mot cle absent, commande ignoree.")
             continue
 
-        message = lowered[len(WAKE_WORD) :].strip()
-        if not message:
-            print("Assistant: commande vide apres le mot cle.")
-            continue
-
-        if message in {"aide", "help"}:
+        if result.is_help_requested:
             print("Assistant: intents supportes -> heure, date, meteo, musique, lumiere, rappel, agenda, stop")
             print("Assistant: fallback Leon actif si intent inconnu.")
+            continue
+
+        message = result.command
+        if not message:
+            print("Assistant: commande vide apres le mot cle.")
             continue
 
         correlation_id = str(uuid4())

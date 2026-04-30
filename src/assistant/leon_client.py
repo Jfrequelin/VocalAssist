@@ -32,13 +32,36 @@ class LeonClient:
     retry_attempts: int = 1
     retry_backoff_seconds: float = 0.0
 
+    @staticmethod
+    def _read_required_env(name: str) -> str:
+        value = os.getenv(name)
+        if value is None or not value.strip():
+            raise RuntimeError(f"Variable d'environnement requise manquante: {name}")
+        return value.strip()
+
+    @classmethod
+    def _read_float_env(cls, name: str) -> float:
+        raw_value = cls._read_required_env(name)
+        try:
+            return float(raw_value)
+        except ValueError as exc:
+            raise RuntimeError(f"Variable d'environnement invalide ({name}): {raw_value}") from exc
+
+    @classmethod
+    def _read_int_env(cls, name: str) -> int:
+        raw_value = cls._read_required_env(name)
+        try:
+            return int(raw_value)
+        except ValueError as exc:
+            raise RuntimeError(f"Variable d'environnement invalide ({name}): {raw_value}") from exc
+
     @classmethod
     def from_env(cls) -> "LeonClient":
-        base_url = os.getenv("LEON_API_URL", "http://localhost:1337")
-        endpoint = os.getenv("LEON_API_ENDPOINT", "/api/query")
-        timeout = float(os.getenv("LEON_TIMEOUT_SECONDS", "5"))
-        retry_attempts = int(os.getenv("LEON_RETRY_ATTEMPTS", "1"))
-        retry_backoff = float(os.getenv("LEON_RETRY_BACKOFF_SECONDS", "0"))
+        base_url = cls._read_required_env("LEON_API_URL")
+        endpoint = cls._read_required_env("LEON_API_ENDPOINT")
+        timeout = cls._read_float_env("LEON_TIMEOUT_SECONDS")
+        retry_attempts = cls._read_int_env("LEON_RETRY_ATTEMPTS")
+        retry_backoff = cls._read_float_env("LEON_RETRY_BACKOFF_SECONDS")
         return cls(
             base_url=base_url.rstrip("/"),
             endpoint=endpoint,

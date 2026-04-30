@@ -28,16 +28,62 @@ python -m unittest discover -s tests -p "test_*.py"
 
 Le prototype utilise d'abord les intents locaux. Si la demande est inconnue, il tente un fallback vers Leon via HTTP.
 
-Variables optionnelles:
+Variables requises (obligatoires):
 
-- `LEON_API_URL` (defaut: `http://localhost:1337`)
-- `LEON_API_ENDPOINT` (defaut: `/api/query`)
-- `LEON_TIMEOUT_SECONDS` (defaut: `5`)
+- `LEON_API_URL` (ex: `http://localhost:1337`)
+- `LEON_API_ENDPOINT` (ex: `/api/query`)
+- `LEON_TIMEOUT_SECONDS` (ex: `5`)
+- `LEON_RETRY_ATTEMPTS` (ex: `1`)
+- `LEON_RETRY_BACKOFF_SECONDS` (ex: `0`)
 
 Exemple:
 
 ```bash
-LEON_API_URL=http://localhost:1337 LEON_API_ENDPOINT=/api/query python3 main.py --mode prototype
+LEON_API_URL=http://localhost:1337 \
+LEON_API_ENDPOINT=/api/query \
+LEON_TIMEOUT_SECONDS=5 \
+LEON_RETRY_ATTEMPTS=1 \
+LEON_RETRY_BACKOFF_SECONDS=0 \
+python3 main.py --mode prototype
+```
+
+Si une variable Leon requise est absente ou invalide, le client Leon remonte une erreur explicite de configuration.
+
+## Providers externes du MVP
+
+Les intents `lumiere`, `meteo` et `musique` peuvent maintenant utiliser des providers HTTP externes. Sans configuration, le prototype conserve son fallback local simule.
+
+Home Assistant pour la lumiere:
+
+- `HOME_ASSISTANT_URL`
+- `HOME_ASSISTANT_TOKEN`
+- `HOME_ASSISTANT_LIGHT_DEFAULT_ENTITY` ou une ou plusieurs variables par piece:
+	- `HOME_ASSISTANT_LIGHT_SALON`
+	- `HOME_ASSISTANT_LIGHT_CHAMBRE`
+	- `HOME_ASSISTANT_LIGHT_CUISINE`
+	- `HOME_ASSISTANT_LIGHT_BUREAU`
+- `HOME_ASSISTANT_TIMEOUT_SECONDS` (optionnelle)
+
+Provider meteo:
+
+- `WEATHER_PROVIDER_URL_TEMPLATE` avec placeholder `{city}`
+- `WEATHER_PROVIDER_TIMEOUT_SECONDS` (optionnelle)
+
+Provider musique/radio:
+
+- `MUSIC_PROVIDER_URL`
+- `MUSIC_PROVIDER_AUTH_TOKEN` (optionnelle)
+- `MUSIC_PROVIDER_TIMEOUT_SECONDS` (optionnelle)
+
+Exemple:
+
+```bash
+HOME_ASSISTANT_URL=http://homeassistant.local:8123 \
+HOME_ASSISTANT_TOKEN=xxxx \
+HOME_ASSISTANT_LIGHT_SALON=light.salon \
+WEATHER_PROVIDER_URL_TEMPLATE='https://weather.example/api/current?city={city}' \
+MUSIC_PROVIDER_URL=https://music.example/api/playback \
+python3 main.py --mode prototype
 ```
 
 ## Structure
@@ -50,6 +96,5 @@ LEON_API_URL=http://localhost:1337 LEON_API_ENDPOINT=/api/query python3 main.py 
 
 ## Prochaines evolutions
 
-- Ajouter reconnaissance vocale (Whisper/Vosk).
-- Ajouter synthese vocale (Coqui TTS/pyttsx3).
-- Connecter des APIs reelles (meteo, calendrier, domotique).
+- Ajouter des providers supplementaires (agenda, scene domotique, capteurs).
+- Renforcer l'observabilite et les tests de bout en bout sur services externes.

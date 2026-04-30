@@ -18,12 +18,6 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# Vérifier que requests est installé
-if ! python3 -c "import requests" 2>/dev/null; then
-    echo -e "${YELLOW}⚠️  Installation de requests...${NC}"
-    pip3 install requests
-fi
-
 # Par défaut: sync des tickets ouverts
 STATE="${1:-open}"
 LABELS="${@:2}"
@@ -46,10 +40,10 @@ echo -e "${GREEN}🚀 Synchronisation des tickets...${NC}"
 python3 "$PYTHON_SCRIPT" --state "$STATE" $LABELS
 
 echo ""
-echo -e "${GREEN}✅ Tickets synchronisés dans: .tickets-local/${NC}"
+echo -e "${GREEN}✅ Tickets synchronisés dans: doc/tickets/${NC}"
 echo ""
 echo "Pour consulter:"
-echo "  cat .tickets-local/INDEX.md"
+echo "  cat doc/tickets/INDEX.md"
 echo ""
 echo "Pour filtrer par sprint:"
 echo "  ./scripts/sync.sh all --label 'Sprint 2 weeks'"

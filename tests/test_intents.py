@@ -39,6 +39,10 @@ class TestParseIntent(unittest.TestCase):
     def test_weather_with_accent(self) -> None:
         self.assertEqual(parse_intent("météo de Paris"), "weather")
 
+    def test_extract_weather_city_slot(self) -> None:
+        slots = extract_slots("meteo a Paris", "weather")
+        self.assertEqual(slots.get("city"), "paris")
+
     def test_light(self) -> None:
         self.assertEqual(parse_intent("allume la lumiere"), "light")
 

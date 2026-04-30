@@ -49,8 +49,31 @@ Ces instructions guident GitHub Copilot pour ce repository.
 ## Qualite et validation
 
 - Proposer des tests pour toute nouvelle logique metier.
+- Apres chaque modification de code, faire systematiquement une passe Pylance sur les fichiers touches.
+- Apres chaque modification de code, executer systematiquement les tests les plus proches de la zone modifiee, puis elargir si necessaire.
 - Verifier qu'un lancement local fonctionne apres modification.
 - Mettre a jour la documentation lorsque le comportement change.
+
+## Tickets GitHub et tickets locaux
+
+- Synchroniser systematiquement les tickets GitHub et les tickets locaux avant et apres une mise a jour significative du suivi.
+- Les tickets locaux doivent etre ecrits dans le repertoire separe doc/tickets, qui est ignore par Git.
+- Ne jamais versionner les tickets locaux synchronises; seule la source GitHub fait foi.
+- Si un script de synchronisation evolue, conserver ce chemin comme emplacement canonique des tickets locaux.
+
+## Workflow obligatoire de traitement d'un ticket
+
+Pour chaque ticket de developpement, suivre strictement cet ordre:
+
+1. **Preparation TDD**: creer ou mettre a jour les tests avant le code metier.
+2. **Implementation**: ecrire le code minimal necessaire pour faire passer les tests.
+3. **Passe Pylance**: corriger toutes les erreurs et types inconnus sur les fichiers touches.
+4. **Passe Pylint**: corriger les alertes pertinentes liees au ticket.
+5. **Validation fonctionnelle**: executer les tests cibles puis les tests elargis si necessaire.
+6. **Mise a jour Git**: commit et push avec reference explicite du ticket (`Fixes #<id>` quand applicable).
+7. **Mise a jour du ticket**: documenter le resultat, puis passer le ticket a l'etat `ok` (fermeture ou commentaire de resolution selon workflow projet).
+
+Raccourci interdit: ne pas sauter l'une de ces etapes, meme pour une correction mineure.
 
 ## Securite
 

@@ -36,6 +36,7 @@ env/
 .DS_Store
 
 # Local tickets sync (do NOT commit)
+doc/tickets/
 .tickets-local/
 tickets-local/
 

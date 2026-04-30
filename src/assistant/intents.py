@@ -5,6 +5,8 @@ import unicodedata
 from datetime import datetime
 from typing import Callable, TypedDict
 
+from src.assistant.providers import ProviderRegistry
+
 
 ResponseFactory = Callable[[datetime], str]
 
@@ -194,6 +196,11 @@ def extract_slots(message: str, intent: str) -> IntentSlots:
     text = _normalize_text(message)
     slots: IntentSlots = {}
 
+    if intent == "weather":
+        city_match = re.search(r"\b(?:a|de|pour)\s+([a-z][a-z\- ]+)$", text)
+        if city_match:
+            slots["city"] = city_match.group(1).strip()
+
     if intent == "light":
         room_match = re.search(r"\b(salon|chambre|cuisine|bureau)\b", text)
         if room_match:
@@ -245,13 +252,12 @@ def validate_slots(intent: str, slots: IntentSlots) -> str | None:
     return None
 
 
-def respond(intent: str, slots: IntentSlots | None = None) -> str:
-    now = datetime.now()
-    normalized_slots = slots or {}
-
-    validation_error = validate_slots(intent, normalized_slots)
-    if validation_error:
-        return validation_error
+def _local_response(intent: str, normalized_slots: IntentSlots, now: datetime) -> str:
+    if intent == "weather":
+        city = normalized_slots.get("city")
+        if isinstance(city, str) and city:
+            return f"Simulation meteo {city}: ciel degage, 21 degres."
+        return "Simulation meteo: ciel degage, 21 degres."
 
     if intent == "light":
         state = normalized_slots.get("state", "on")
@@ -286,3 +292,31 @@ def respond(intent: str, slots: IntentSlots | None = None) -> str:
         return response_factory(now)
 
     return "Je n'ai pas compris la demande."
+
+
+def _respond(
+    intent: str,
+    slots: IntentSlots | None = None,
+    provider_registry: ProviderRegistry | None = None,
+) -> str:
+    now = datetime.now()
+    normalized_slots = slots or {}
+
+    validation_error = validate_slots(intent, normalized_slots)
+    if validation_error:
+        return validation_error
+
+    fallback_response = _local_response(intent, normalized_slots, now)
+    active_registry = provider_registry or ProviderRegistry.from_env()
+    if intent in {"weather", "light", "music"}:
+        return active_registry.execute(intent, normalized_slots, fallback_response)
+
+    return fallback_response
+
+
+def respond(
+    intent: str,
+    slots: IntentSlots | None = None,
+    provider_registry: ProviderRegistry | None = None,
+) -> str:
+    return _respond(intent, slots, provider_registry)

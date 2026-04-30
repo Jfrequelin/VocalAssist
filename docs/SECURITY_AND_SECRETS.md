@@ -93,12 +93,32 @@ import os
 
 # API keys depuis l'environnement
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-LEON_ENDPOINT = os.getenv("LEON_ENDPOINT")  # eg: https://leon.local:8080
+LEON_API_URL = os.getenv("LEON_API_URL")  # eg: https://leon.local:8080
+LEON_API_ENDPOINT = os.getenv("LEON_API_ENDPOINT")  # eg: /api/query
+LEON_TIMEOUT_SECONDS = os.getenv("LEON_TIMEOUT_SECONDS")  # eg: 5
+LEON_RETRY_ATTEMPTS = os.getenv("LEON_RETRY_ATTEMPTS")  # eg: 1
+LEON_RETRY_BACKOFF_SECONDS = os.getenv("LEON_RETRY_BACKOFF_SECONDS")  # eg: 0
+HOME_ASSISTANT_URL = os.getenv("HOME_ASSISTANT_URL")
+HOME_ASSISTANT_TOKEN = os.getenv("HOME_ASSISTANT_TOKEN")
+HOME_ASSISTANT_LIGHT_SALON = os.getenv("HOME_ASSISTANT_LIGHT_SALON")
+WEATHER_PROVIDER_URL_TEMPLATE = os.getenv("WEATHER_PROVIDER_URL_TEMPLATE")
+MUSIC_PROVIDER_URL = os.getenv("MUSIC_PROVIDER_URL")
+MUSIC_PROVIDER_AUTH_TOKEN = os.getenv("MUSIC_PROVIDER_AUTH_TOKEN")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 
 # Exemple fichier .env (dans .gitignore):
 # GITHUB_TOKEN=ghp_xxxxxxxxxxxx
-# LEON_ENDPOINT=https://leon.example.com
+# LEON_API_URL=https://leon.example.com
+# LEON_API_ENDPOINT=/api/query
+# LEON_TIMEOUT_SECONDS=5
+# LEON_RETRY_ATTEMPTS=1
+# LEON_RETRY_BACKOFF_SECONDS=0
+# HOME_ASSISTANT_URL=https://ha.example.com
+# HOME_ASSISTANT_TOKEN=ha_xxxxxxxxxxxx
+# HOME_ASSISTANT_LIGHT_SALON=light.salon
+# WEATHER_PROVIDER_URL_TEMPLATE=https://weather.example/api/current?city={city}
+# MUSIC_PROVIDER_URL=https://music.example/api/playback
+# MUSIC_PROVIDER_AUTH_TOKEN=music_xxxxxxxxxxxx
 # DB_PASSWORD=MySecurePassword123
 ```
 
@@ -209,7 +229,17 @@ Créer `.env.template` ou `.env.example` (sans vraies valeurs):
 ```bash
 # .env.example (safe to commit)
 GITHUB_TOKEN=your_github_token_here
-LEON_ENDPOINT=https://leon.example.com:8080
+LEON_API_URL=https://leon.example.com:8080
+LEON_API_ENDPOINT=/api/query
+LEON_TIMEOUT_SECONDS=5
+LEON_RETRY_ATTEMPTS=1
+LEON_RETRY_BACKOFF_SECONDS=0
+HOME_ASSISTANT_URL=https://ha.example.com
+HOME_ASSISTANT_TOKEN=your_home_assistant_token_here
+HOME_ASSISTANT_LIGHT_SALON=light.salon
+WEATHER_PROVIDER_URL_TEMPLATE=https://weather.example/api/current?city={city}
+MUSIC_PROVIDER_URL=https://music.example/api/playback
+MUSIC_PROVIDER_AUTH_TOKEN=your_music_provider_token_here
 DB_PASSWORD=your_db_password_here
 ```
 

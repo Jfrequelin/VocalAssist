@@ -5,6 +5,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from src.assistant.orchestrator import handle_message
+from src.assistant.wake_word_handler import WakeWordHandler
 from src.assistant.voice_pipeline import (
     FasterWhisperSpeechToText,
     MockSpeechToText,
@@ -13,8 +14,6 @@ from src.assistant.voice_pipeline import (
     SpeechToTextEngine,
     TextToSpeechEngine,
 )
-
-WAKE_WORD = "nova"
 
 
 def _build_stt() -> SpeechToTextEngine:
@@ -46,6 +45,7 @@ def _build_tts() -> TextToSpeechEngine:
 
 
 def run_prototype_voice() -> None:
+    handler = WakeWordHandler(wake_word="nova")
     stt = _build_stt()
     tts = _build_tts()
 
@@ -64,13 +64,18 @@ def run_prototype_voice() -> None:
         stt_start = perf_counter()
         transcription = stt.transcribe(audio_payload)
         stt_ms = (perf_counter() - stt_start) * 1000
-        lowered = transcription.lower()
 
-        if not lowered.startswith(WAKE_WORD):
+        result = handler.extract_command(transcription)
+        if not result.activated:
             print("Assistant: mot cle absent, commande ignoree.")
             continue
 
-        message = lowered[len(WAKE_WORD) :].strip()
+        if result.is_help_requested:
+            print("Assistant: intents supportes -> heure, date, meteo, musique, lumiere, rappel, agenda, stop")
+            print("Assistant: fallback Leon actif si intent inconnu.")
+            continue
+
+        message = result.command
         if not message:
             print("Assistant: commande vide apres le mot cle.")
             continue
