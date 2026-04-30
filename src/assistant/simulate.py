@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.assistant.intents import parse_intent, respond
+from src.assistant.intents import extract_slots, parse_intent, respond
 from src.assistant.scenarios import load_scenarios
 
 
@@ -13,7 +13,8 @@ def run_simulation() -> None:
         message = scenario["user"]
         expected = scenario["expected_intent"]
         intent = parse_intent(message)
-        answer = respond(intent)
+        slots = extract_slots(message, intent)
+        answer = respond(intent, slots)
         is_ok = intent == expected
         if is_ok:
             correct += 1

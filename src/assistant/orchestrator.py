@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.assistant.intents import parse_intent, respond
+from src.assistant.intents import extract_slots, parse_intent, respond
 from src.assistant.leon_client import LeonClient
 
 
@@ -17,7 +17,8 @@ def handle_message(message: str, use_leon_fallback: bool = True) -> AssistantRep
     intent = parse_intent(message)
 
     if intent != "unknown":
-        return AssistantReply(intent=intent, answer=respond(intent), source="local")
+        slots = extract_slots(message, intent)
+        return AssistantReply(intent=intent, answer=respond(intent, slots), source="local")
 
     if not use_leon_fallback:
         return AssistantReply(intent=intent, answer=respond(intent), source="local")

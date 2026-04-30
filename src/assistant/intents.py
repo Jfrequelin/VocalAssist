@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Callable, TypedDict
 
@@ -11,6 +12,10 @@ class IntentConfig(TypedDict):
     priority: int
     keywords: list[str]
     response: ResponseFactory
+
+
+SlotValue = str | int
+IntentSlots = dict[str, SlotValue]
 
 
 def _time_response(now: datetime) -> str:
@@ -67,6 +72,10 @@ def _system_help_response(_now: datetime) -> str:
     )
 
 
+def _temperature_response(_now: datetime) -> str:
+    return "Simulation climatisation: temperature ajustee."
+
+
 INTENT_REGISTRY: dict[str, IntentConfig] = {
     "stop_media": {
         "priority": 100,
@@ -115,6 +124,11 @@ INTENT_REGISTRY: dict[str, IntentConfig] = {
         "keywords": ["meteo"],
         "response": _weather_response,
     },
+    "temperature": {
+        "priority": 50,
+        "keywords": ["temperature", "chauffage", "thermostat"],
+        "response": _temperature_response,
+    },
     "music": {
         "priority": 50,
         "keywords": ["musique", "chanson", "play"],
@@ -160,8 +174,95 @@ def parse_intent(message: str) -> str:
     return "unknown"
 
 
-def respond(intent: str) -> str:
+def extract_slots(message: str, intent: str) -> IntentSlots:
+    text = message.lower()
+    slots: IntentSlots = {}
+
+    if intent == "light":
+        room_match = re.search(r"\b(salon|chambre|cuisine|bureau)\b", text)
+        if room_match:
+            slots["room"] = room_match.group(1)
+
+        if any(keyword in text for keyword in ["allume", "active", "on"]):
+            slots["state"] = "on"
+        elif any(keyword in text for keyword in ["eteins", "coupe", "off"]):
+            slots["state"] = "off"
+
+    if intent == "music":
+        if any(keyword in text for keyword in ["stop", "arrete", "pause"]):
+            slots["action"] = "stop"
+        elif any(keyword in text for keyword in ["play", "lance", "demarre"]):
+            slots["action"] = "play"
+
+        volume_match = re.search(r"(?:volume|son)\s*(\d{1,3})", text)
+        if volume_match:
+            slots["volume"] = int(volume_match.group(1))
+
+        genre_match = re.search(r"\b(rock|jazz|pop|classique|electro)\b", text)
+        if genre_match:
+            slots["genre"] = genre_match.group(1)
+
+    if intent == "temperature":
+        temp_match = re.search(r"(-?\d{1,2})\s*(?:°|degres?|c)?", text)
+        if temp_match:
+            slots["value"] = int(temp_match.group(1))
+
+    return slots
+
+
+def validate_slots(intent: str, slots: IntentSlots) -> str | None:
+    if intent == "light" and "state" not in slots:
+        return "Precisez l'action lumiere: allumer ou eteindre."
+
+    if intent == "music" and "volume" in slots:
+        volume = slots["volume"]
+        if isinstance(volume, int) and not 0 <= volume <= 100:
+            return "Le volume doit etre compris entre 0 et 100."
+
+    if intent == "temperature":
+        if "value" not in slots:
+            return "Precisez la temperature cible en degres."
+        value = slots["value"]
+        if isinstance(value, int) and not 10 <= value <= 30:
+            return "La temperature doit etre comprise entre 10 et 30 degres."
+
+    return None
+
+
+def respond(intent: str, slots: IntentSlots | None = None) -> str:
     now = datetime.now()
+    normalized_slots = slots or {}
+
+    validation_error = validate_slots(intent, normalized_slots)
+    if validation_error:
+        return validation_error
+
+    if intent == "light":
+        state = normalized_slots.get("state", "on")
+        room = str(normalized_slots.get("room", "salon"))
+        if state == "off":
+            return f"Simulation domotique: lumiere du {room} eteinte."
+        return f"Simulation domotique: lumiere du {room} allumee."
+
+    if intent == "music":
+        action = str(normalized_slots.get("action", "play"))
+        if action == "stop":
+            return "Simulation musique: lecture arretee."
+
+        genre = normalized_slots.get("genre")
+        volume = normalized_slots.get("volume")
+        details: list[str] = []
+        if isinstance(genre, str):
+            details.append(f"genre {genre}")
+        if isinstance(volume, int):
+            details.append(f"volume {volume}")
+        suffix = f" ({', '.join(details)})" if details else ""
+        return f"Simulation musique: lecture lancee{suffix}."
+
+    if intent == "temperature":
+        target = normalized_slots.get("value")
+        if isinstance(target, int):
+            return f"Simulation climatisation: temperature reglee a {target} degres."
 
     data = INTENT_REGISTRY.get(intent)
     if data is not None:

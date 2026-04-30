@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from src.assistant.intents import INTENT_REGISTRY, parse_intent, respond
+from src.assistant.intents import INTENT_REGISTRY, extract_slots, parse_intent, respond
 
 
 class TestParseIntent(unittest.TestCase):
@@ -23,6 +23,7 @@ class TestParseIntent(unittest.TestCase):
                 "restart",
                 "stop_media",
                 "system_help",
+                "temperature",
             },
         )
 
@@ -67,6 +68,32 @@ class TestParseIntent(unittest.TestCase):
 
     def test_system_help(self) -> None:
         self.assertEqual(parse_intent("aide systeme"), "system_help")
+
+    def test_temperature(self) -> None:
+        self.assertEqual(parse_intent("regle la temperature a 22"), "temperature")
+
+    def test_extract_light_slots(self) -> None:
+        slots = extract_slots("allume la lumiere du salon", "light")
+        self.assertEqual(slots.get("state"), "on")
+        self.assertEqual(slots.get("room"), "salon")
+
+    def test_extract_music_slots(self) -> None:
+        slots = extract_slots("lance de la musique rock volume 30", "music")
+        self.assertEqual(slots.get("action"), "play")
+        self.assertEqual(slots.get("genre"), "rock")
+        self.assertEqual(slots.get("volume"), 30)
+
+    def test_respond_music_volume_out_of_range(self) -> None:
+        answer = respond("music", {"volume": 130})
+        self.assertIn("entre 0 et 100", answer)
+
+    def test_respond_temperature_requires_value(self) -> None:
+        answer = respond("temperature", {})
+        self.assertIn("Precisez la temperature", answer)
+
+    def test_respond_temperature_with_value(self) -> None:
+        answer = respond("temperature", {"value": 21})
+        self.assertIn("21", answer)
 
     def test_known_intents_have_non_empty_response(self) -> None:
         for intent in INTENT_REGISTRY:

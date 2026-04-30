@@ -9,6 +9,7 @@
   {"user": "Augmente le volume", "expected_intent": "volume"},
   {"user": "Redemarre le systeme", "expected_intent": "restart"},
   {"user": "Aide systeme", "expected_intent": "system_help"},
+  {"user": "Regle la temperature a 21", "expected_intent": "temperature"},
   {"user": "Mets un rappel pour demain", "expected_intent": "reminder"},
   {"user": "Qu'ai-je dans mon agenda", "expected_intent": "agenda"},
   {"user": "Merci, stop", "expected_intent": "exit"}
