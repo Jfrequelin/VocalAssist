@@ -1,0 +1,1 @@
+"""Package assistant vocal."""

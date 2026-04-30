@@ -1,0 +1,10 @@
+[
+  {"user": "Quelle heure est-il ?", "expected_intent": "time"},
+  {"user": "Donne-moi la date du jour", "expected_intent": "date"},
+  {"user": "Donne-moi la meteo", "expected_intent": "weather"},
+  {"user": "Allume la lumiere du salon", "expected_intent": "light"},
+  {"user": "Lance de la musique", "expected_intent": "music"},
+  {"user": "Mets un rappel pour demain", "expected_intent": "reminder"},
+  {"user": "Qu'ai-je dans mon agenda", "expected_intent": "agenda"},
+  {"user": "Merci, stop", "expected_intent": "exit"}
+]
