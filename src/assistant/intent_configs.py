@@ -101,6 +101,38 @@ def _exit_response(slots: dict[str, Any]) -> str:
     return "A bientot. Fermeture de l'assistant."
 
 
+def _timer_response(slots: dict[str, Any]) -> str:
+    """Generate timer response."""
+    duration = slots.get("duration", 5)
+    unit = slots.get("unit", "minutes")
+    return f"Minuteur programme pour {duration} {unit}."
+
+
+def _notes_response(slots: dict[str, Any]) -> str:
+    """Generate notes/todo response."""
+    action = slots.get("action", "ajouter")
+    if action == "lister":
+        return "Simulation notes: vous avez 3 notes."
+    return "Simulation notes: note sauvegardee."
+
+
+def _search_response(slots: dict[str, Any]) -> str:
+    """Generate search response."""
+    query = slots.get("query", "")
+    if query:
+        return f"Simulation recherche: resultats pour '{query}'."
+    return "Simulation recherche: pret a chercher."
+
+
+def _settings_response(slots: dict[str, Any]) -> str:
+    """Generate settings response."""
+    setting = slots.get("setting", "")
+    value = slots.get("value", "")
+    if value:
+        return f"Parametres: {setting} regle a {value}."
+    return f"Parametres: {setting} modifie."
+
+
 def _generic_response(slots: dict[str, Any]) -> str:
     """Generic response for simple intents."""
     return "Demande enregistree."
@@ -264,6 +296,79 @@ def create_default_registry() -> IntentRegistry:
         keywords=["aide", "aide systeme", "help", "?"],
         priority=45,
         response_factory=_system_help_response,
+    )
+
+    # NEW: Timer/Alarm (MACRO-002-T2)
+    registry.register(
+        intent_id="timer",
+        keywords=["minuteur", "timer", "alarme", "minuterie", "alarmer", "demarre un minuteur"],
+        priority=40,
+        slots={
+            "duration": SlotDefinition(
+                slot_type=SlotType.NUMERIC,
+                min_value=1,
+                max_value=3600,
+                required=False,
+            ),
+            "unit": SlotDefinition(
+                slot_type=SlotType.ENUM,
+                enum_values=["secondes", "minutes", "heures"],
+                required=False,
+            ),
+        },
+        response_factory=_timer_response,
+    )
+
+    # NEW: Notes/TODO (MACRO-002-T2)
+    registry.register(
+        intent_id="notes",
+        keywords=["note", "notes", "todo", "rappel", "ajoute une note", "liste mes notes"],
+        priority=40,
+        slots={
+            "action": SlotDefinition(
+                slot_type=SlotType.ENUM,
+                enum_values=["ajouter", "lister", "supprime", "delete"],
+                required=False,
+            ),
+            "content": SlotDefinition(
+                slot_type=SlotType.STRING,
+                required=False,
+            ),
+        },
+        response_factory=_notes_response,
+    )
+
+    # NEW: Search (MACRO-002-T2)
+    registry.register(
+        intent_id="search",
+        keywords=["cherche", "recherche", "trouve", "search", "google"],
+        priority=35,
+        slots={
+            "query": SlotDefinition(
+                slot_type=SlotType.STRING,
+                required=False,
+            ),
+        },
+        response_factory=_search_response,
+    )
+
+    # NEW: Settings/Configuration (MACRO-002-T2)
+    registry.register(
+        intent_id="settings",
+        keywords=["parametres", "reglages", "config", "configuration", "modifie la langue"],
+        priority=35,
+        slots={
+            "setting": SlotDefinition(
+                slot_type=SlotType.ENUM,
+                enum_values=["langue", "volume", "luminosite", "heure", "mode"],
+                required=False,
+            ),
+            "value": SlotDefinition(
+                slot_type=SlotType.STRING,
+                required=False,
+            ),
+        },
+        response_factory=_settings_response,
     )
 
     return registry
