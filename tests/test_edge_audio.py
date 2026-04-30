@@ -9,12 +9,29 @@ from typing import cast
 from src.assistant.edge_audio import (
     EdgeAudioPayload,
     build_edge_audio_payload,
+    evaluate_edge_activation,
     send_edge_audio_payload,
 )
 from src.assistant.edge_backend import handle_edge_audio_request
 
 
 class TestEdgeAudio(unittest.TestCase):
+    def test_edge_activation_rejects_ambient_noise(self) -> None:
+        decision = evaluate_edge_activation("...", wake_word="nova")
+        self.assertFalse(decision.should_send)
+        self.assertEqual(decision.reason, "vad_rejected_low_voice")
+
+    def test_edge_activation_rejects_missing_wake_word(self) -> None:
+        decision = evaluate_edge_activation("quelle heure est il", wake_word="nova")
+        self.assertFalse(decision.should_send)
+        self.assertEqual(decision.reason, "wake_word_missing")
+
+    def test_edge_activation_accepts_command_after_wake_word(self) -> None:
+        decision = evaluate_edge_activation("nova quelle heure est il", wake_word="nova")
+        self.assertTrue(decision.should_send)
+        self.assertEqual(decision.reason, "accepted")
+        self.assertEqual(decision.command, "quelle heure est il")
+
     def test_build_payload_encodes_audio(self) -> None:
         payload = build_edge_audio_payload(b"abc", device_id="esp32-01", correlation_id="cid-1")
         self.assertEqual(payload.correlation_id, "cid-1")

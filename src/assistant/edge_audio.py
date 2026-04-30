@@ -31,6 +31,37 @@ class EdgeAudioPayload:
         }
 
 
+@dataclass
+class EdgeActivationDecision:
+    should_send: bool
+    reason: str
+    command: str = ""
+
+
+def evaluate_edge_activation(
+    transcript: str,
+    wake_word: str = "nova",
+    min_voice_chars: int = 6,
+) -> EdgeActivationDecision:
+    text = transcript.strip().lower()
+    if not text:
+        return EdgeActivationDecision(should_send=False, reason="empty_audio")
+
+    # VAD heuristique minimal: rejette les segments tres courts/non verbaux.
+    alnum_count = sum(1 for ch in text if ch.isalnum())
+    if alnum_count < min_voice_chars:
+        return EdgeActivationDecision(should_send=False, reason="vad_rejected_low_voice")
+
+    if not text.startswith(wake_word):
+        return EdgeActivationDecision(should_send=False, reason="wake_word_missing")
+
+    command = text[len(wake_word) :].strip()
+    if not command:
+        return EdgeActivationDecision(should_send=False, reason="wake_word_without_command")
+
+    return EdgeActivationDecision(should_send=True, reason="accepted", command=command)
+
+
 def build_edge_audio_payload(
     audio_bytes: bytes,
     device_id: str,
