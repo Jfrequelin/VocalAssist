@@ -4,20 +4,24 @@ Scripts pour synchroniser les tickets GitHub (issues/PRs) avec des fichiers mark
 
 ## 📦 Setup
 
-### 1. Configuration Token GitHub
+### 1. Authentification GitHub sans exposer le token
 
 ```bash
-# Générer un token: https://github.com/settings/tokens
-# Permissions minimum: repo (publique) ou private_repo (privée)
+# Recommande: login via navigateur, sans manipuler le token en clair
+./scripts/gh-auth-secure.sh --web
 
-export GITHUB_TOKEN='ghp_votre_token_ici'
+# Alternative: saisie masquee d'un token personnel
+./scripts/gh-auth-secure.sh --token
 ```
+
+Le script de synchronisation utilise ensuite automatiquement, dans cet ordre:
+- `--token` passe au script
+- `GITHUB_TOKEN`
+- le token deja stocke par `gh auth login`
 
 ### 2. Installation dépendances
 
-```bash
-pip3 install requests
-```
+Le script n'a pas de dependance Python externe obligatoire.
 
 ## 🚀 Utilisation
 
@@ -42,6 +46,45 @@ python3 scripts/sync_tickets.py
 python3 scripts/sync_tickets.py --state open --label "SRV" --label "Priority-1"
 ```
 
+## Publication du backlog local vers GitHub
+
+Une fois `gh` authentifie, vous pouvez publier les tickets macro et sous-tickets prepares dans `doc/tickets`.
+
+```bash
+# Verifier auth
+gh auth status
+
+# Voir ce qui sera cree sans rien publier
+python3 scripts/publish_backlog_to_github.py --repo Jfrequelin/VocalAssist --all --dry-run
+
+# Publier les macros seulement
+python3 scripts/publish_backlog_to_github.py --repo Jfrequelin/VocalAssist --macros
+
+# Publier ensuite les sous-tickets
+python3 scripts/publish_backlog_to_github.py --repo Jfrequelin/VocalAssist --subtickets
+```
+
+## Validation standard d'un ticket
+
+Le script suivant applique le workflow de traitement ticket:
+- py_compile
+- tests
+- passe Pylance (pyright si disponible)
+- passe pylint
+
+```bash
+# Exemple sur un ticket
+python3 scripts/validate_ticket.py \
+  --files src/assistant/prototype_voice.py src/assistant/voice_pipeline.py \
+  --tests tests/test_voice_pipeline.py tests/test_orchestrator.py
+
+# Mode strict (echoue si pyright/pylint absents)
+python3 scripts/validate_ticket.py \
+  --files src/assistant/prototype_voice.py \
+  --tests tests/test_voice_pipeline.py \
+  --strict-pylance --strict-pylint
+```
+
 ### Options disponibles
 
 ```bash
@@ -52,7 +95,7 @@ python3 scripts/sync_tickets.py --help
 |--------|-----------|-------------|
 | `--owner` | `Jfrequelin` | Propriétaire du repo GitHub |
 | `--repo` | `VocalAssist` | Nom du repo |
-| `--token` | `$GITHUB_TOKEN` | Token GitHub (var env par défaut) |
+| `--token` | `gh auth token` ou `$GITHUB_TOKEN` | Token GitHub |
 | `--state` | `open` | État: `open`, `closed`, ou `all` |
 | `--label` | - | Filtrer par label (répétable) |
 
