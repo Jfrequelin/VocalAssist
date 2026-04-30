@@ -12,6 +12,7 @@ class TestOrchestrator(unittest.TestCase):
         reply = handle_message("quelle heure est-il", use_leon_fallback=True)
         self.assertEqual(reply.source, "local")
         self.assertEqual(reply.intent, "time")
+        self.assertEqual(reply.routing_trace.get("route"), "local")
 
     @patch("src.assistant.orchestrator.LeonClient")
     def test_critical_local_intent_does_not_call_leon(self, mock_leon_cls: Any) -> None:
@@ -19,6 +20,7 @@ class TestOrchestrator(unittest.TestCase):
 
         self.assertEqual(reply.source, "local")
         self.assertEqual(reply.intent, "stop_media")
+        self.assertEqual(reply.routing_trace.get("route"), "local")
         mock_leon_cls.from_env.assert_not_called()
 
     @patch("src.assistant.orchestrator.LeonClient")
@@ -28,6 +30,7 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(reply.source, "local")
         self.assertEqual(reply.intent, "temperature")
         self.assertIn("22", reply.answer)
+        self.assertEqual(reply.routing_trace.get("route"), "local")
         mock_leon_cls.from_env.assert_not_called()
 
     @patch("src.assistant.orchestrator.LeonClient")
@@ -40,6 +43,7 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(reply.intent, "unknown")
         self.assertEqual(reply.source, "leon")
         self.assertEqual(reply.answer, "Reponse Leon")
+        self.assertEqual(reply.routing_trace.get("route"), "leon")
 
     @patch("src.assistant.orchestrator.LeonClient")
     def test_unknown_handles_unavailable_leon(self, mock_leon_cls: Any) -> None:
@@ -50,6 +54,13 @@ class TestOrchestrator(unittest.TestCase):
 
         self.assertEqual(reply.source, "fallback-error")
         self.assertIn("Leon", reply.answer)
+        self.assertEqual(reply.routing_trace.get("route"), "fallback-error")
+
+    def test_unknown_without_fallback_is_traceable(self) -> None:
+        reply = handle_message("question inconnue", use_leon_fallback=False)
+
+        self.assertEqual(reply.source, "local")
+        self.assertEqual(reply.routing_trace.get("reason"), "fallback_disabled")
 
 
 if __name__ == "__main__":
