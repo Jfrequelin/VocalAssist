@@ -145,7 +145,7 @@ def create_default_registry() -> IntentRegistry:
     # Exit (highest priority - must be checked first)
     registry.register(
         intent_id="exit",
-        keywords=["stop", "arrete", "quitte", "exit"],
+        keywords=["stop", "arrete", "quitte", "exit", "ferme", "bye", "aurevoir"],
         priority=100,
         response_factory=_exit_response,
     )
@@ -205,7 +205,7 @@ def create_default_registry() -> IntentRegistry:
     # Music (with slots)
     registry.register(
         intent_id="music",
-        keywords=["musique", "chanson", "radio", "play", "lance", "demarre"],
+        keywords=["musique", "chanson", "radio", "play", "lance", "joue"],
         priority=70,
         slots={
             "action": SlotDefinition(
@@ -277,15 +277,15 @@ def create_default_registry() -> IntentRegistry:
     # Reminder
     registry.register(
         intent_id="reminder",
-        keywords=["rappel", "remember", "rappelle", "note"],
-        priority=50,
+        keywords=["rappel", "remember", "rappelle"],
+        priority=48,
         response_factory=_reminder_response,
     )
 
     # Agenda / Calendar
     registry.register(
         intent_id="agenda",
-        keywords=["agenda", "calendrier", "planning", "evenement"],
+        keywords=["agenda", "calendrier", "planning", "evenement", "événement"],
         priority=50,
         response_factory=_agenda_response,
     )
@@ -322,8 +322,8 @@ def create_default_registry() -> IntentRegistry:
     # NEW: Notes/TODO (MACRO-002-T2)
     registry.register(
         intent_id="notes",
-        keywords=["note", "notes", "todo", "rappel", "ajoute une note", "liste mes notes"],
-        priority=40,
+        keywords=["note", "notes", "todo", "todos", "tache", "taches", "rappel", "ajoute une note", "liste mes notes"],
+        priority=49,
         slots={
             "action": SlotDefinition(
                 slot_type=SlotType.ENUM,
