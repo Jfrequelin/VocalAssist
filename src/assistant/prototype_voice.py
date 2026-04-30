@@ -5,6 +5,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from src.assistant.orchestrator import handle_message
+from src.assistant.system_messages import SystemMessages
 from src.assistant.wake_word_handler import WakeWordHandler
 from src.assistant.voice_pipeline import (
     FasterWhisperSpeechToText,
@@ -24,7 +25,7 @@ def _build_stt() -> SpeechToTextEngine:
     try:
         return FasterWhisperSpeechToText(model_size=model_size, language="fr")
     except RuntimeError as exc:
-        print(f"Assistant: STT reel indisponible ({exc}), fallback mock")
+        print(f"Assistant: {SystemMessages.format_stt_error(exc)}")
         return MockSpeechToText()
 
 
@@ -34,13 +35,13 @@ def _build_tts() -> TextToSpeechEngine:
 
     model_path = os.getenv("PIPER_MODEL_PATH", "").strip()
     if not model_path:
-        print("Assistant: PIPER_MODEL_PATH absent, fallback TTS mock")
+        print(f"Assistant: {SystemMessages.TTS_PIPER_PATH_MISSING}")
         return MockTextToSpeech()
 
     try:
         return PiperTextToSpeech(model_path=model_path)
     except RuntimeError as exc:
-        print(f"Assistant: TTS reel indisponible ({exc}), fallback mock")
+        print(f"Assistant: {SystemMessages.TTS_ENGINE_FALLBACK}: {exc}")
         return MockTextToSpeech()
 
 
@@ -67,34 +68,33 @@ def run_prototype_voice() -> None:
 
         result = handler.extract_command(transcription)
         if not result.activated:
-            print("Assistant: mot cle absent, commande ignoree.")
+            print(f"Assistant: {SystemMessages.WAKE_WORD_MISSING}")
             continue
 
         if result.is_help_requested:
-            print("Assistant: intents supportes -> heure, date, meteo, musique, lumiere, rappel, agenda, stop")
-            print("Assistant: fallback Leon actif si intent inconnu.")
+            print(f"Assistant: {SystemMessages.format_help_message()}")
             continue
 
         message = result.command
         if not message:
-            print("Assistant: commande vide apres le mot cle.")
+            print(f"Assistant: {SystemMessages.COMMAND_EMPTY}")
             continue
 
         orchestrator_start = perf_counter()
         correlation_id = str(uuid4())
         reply = handle_message(message, use_leon_fallback=True, correlation_id=correlation_id)
         orchestrator_ms = (perf_counter() - orchestrator_start) * 1000
-        print(f"Assistant(trace): cid={reply.correlation_id} source={reply.source}")
+        print(f"Assistant(trace): {SystemMessages.format_trace(reply.correlation_id, reply.source)}")
         if reply.source == "leon":
-            print("Assistant: reponse fournie par Leon")
+            print(f"Assistant: {SystemMessages.LEON_RESPONSE_SOURCE}")
         elif reply.source == "fallback-error":
-            print("Assistant: Leon indisponible, fallback local impossible")
+            print(f"Assistant: {SystemMessages.LEON_UNAVAILABLE}")
 
         tts_start = perf_counter()
         try:
             speech_output = tts.synthesize(reply.answer)
         except RuntimeError as exc:
-            print(f"Assistant: TTS reel en erreur ({exc}), fallback texte")
+            print(f"Assistant: {SystemMessages.format_tts_error(exc)}")
             speech_output = reply.answer
         tts_ms = (perf_counter() - tts_start) * 1000
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from src.assistant.orchestrator import handle_message
+from src.assistant.system_messages import SystemMessages
 from src.assistant.wake_word_handler import WakeWordHandler
 
 
@@ -21,26 +22,25 @@ def run_prototype() -> None:
 
         result = handler.extract_command(raw)
         if not result.activated:
-            print("Assistant: mot cle absent, commande ignoree.")
+            print(f"Assistant: {SystemMessages.WAKE_WORD_MISSING}")
             continue
 
         if result.is_help_requested:
-            print("Assistant: intents supportes -> heure, date, meteo, musique, lumiere, rappel, agenda, stop")
-            print("Assistant: fallback Leon actif si intent inconnu.")
+            print(f"Assistant: {SystemMessages.format_help_message()}")
             continue
 
         message = result.command
         if not message:
-            print("Assistant: commande vide apres le mot cle.")
+            print(f"Assistant: {SystemMessages.COMMAND_EMPTY}")
             continue
 
         correlation_id = str(uuid4())
         reply = handle_message(message, use_leon_fallback=True, correlation_id=correlation_id)
-        print(f"Assistant(trace): cid={reply.correlation_id} source={reply.source}")
+        print(f"Assistant(trace): {SystemMessages.format_trace(reply.correlation_id, reply.source)}")
         if reply.source == "leon":
-            print("Assistant: reponse fournie par Leon")
+            print(f"Assistant: {SystemMessages.LEON_RESPONSE_SOURCE}")
         elif reply.source == "fallback-error":
-            print("Assistant: Leon indisponible, fallback local impossible")
+            print(f"Assistant: {SystemMessages.LEON_UNAVAILABLE}")
 
         print(f"Assistant: {reply.answer}")
 
