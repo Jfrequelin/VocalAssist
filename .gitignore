@@ -43,6 +43,21 @@ tickets-local/
 .env
 .env.local
 
+# Secrets & credentials (CRITICAL)
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+*.cer
+secret*.json
+credentials.json
+config/secrets.yaml
+secrets/
+.aws/
+.azure/
+.gcp/
+
 # Test coverage
 .coverage
 htmlcov/
