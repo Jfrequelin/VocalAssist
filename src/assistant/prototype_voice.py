@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from time import perf_counter
 
 from src.assistant.orchestrator import handle_message
 from src.assistant.voice_pipeline import (
@@ -58,7 +59,10 @@ def run_prototype_voice() -> None:
         if not audio_payload:
             continue
 
+        total_start = perf_counter()
+        stt_start = perf_counter()
         transcription = stt.transcribe(audio_payload)
+        stt_ms = (perf_counter() - stt_start) * 1000
         lowered = transcription.lower()
 
         if not lowered.startswith(WAKE_WORD):
@@ -70,19 +74,29 @@ def run_prototype_voice() -> None:
             print("Assistant: commande vide apres le mot cle.")
             continue
 
+        orchestrator_start = perf_counter()
         reply = handle_message(message, use_leon_fallback=True)
+        orchestrator_ms = (perf_counter() - orchestrator_start) * 1000
         if reply.source == "leon":
             print("Assistant: reponse fournie par Leon")
         elif reply.source == "fallback-error":
             print("Assistant: Leon indisponible, fallback local impossible")
 
+        tts_start = perf_counter()
         try:
             speech_output = tts.synthesize(reply.answer)
         except RuntimeError as exc:
             print(f"Assistant: TTS reel en erreur ({exc}), fallback texte")
             speech_output = reply.answer
+        tts_ms = (perf_counter() - tts_start) * 1000
+
+        total_ms = (perf_counter() - total_start) * 1000
 
         print(f"Assistant(TTS): {speech_output}")
+        print(
+            f"Assistant(metrics): stt={stt_ms:.1f}ms, orchestrateur={orchestrator_ms:.1f}ms, "
+            f"tts={tts_ms:.1f}ms, total={total_ms:.1f}ms"
+        )
 
         if reply.intent == "exit":
             break

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from time import time
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 import shutil
 import subprocess
