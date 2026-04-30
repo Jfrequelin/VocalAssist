@@ -13,6 +13,14 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(reply.intent, "time")
 
     @patch("src.assistant.orchestrator.LeonClient")
+    def test_critical_local_intent_does_not_call_leon(self, mock_leon_cls) -> None:
+        reply = handle_message("stop la musique", use_leon_fallback=True)
+
+        self.assertEqual(reply.source, "local")
+        self.assertEqual(reply.intent, "stop_media")
+        mock_leon_cls.from_env.assert_not_called()
+
+    @patch("src.assistant.orchestrator.LeonClient")
     def test_unknown_uses_leon_when_available(self, mock_leon_cls) -> None:
         mock_leon = mock_leon_cls.from_env.return_value
         mock_leon.ask.return_value = "Reponse Leon"

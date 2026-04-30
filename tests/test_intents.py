@@ -9,7 +9,21 @@ class TestParseIntent(unittest.TestCase):
     def test_registry_contains_expected_intents(self) -> None:
         self.assertEqual(
             set(INTENT_REGISTRY),
-            {"time", "date", "weather", "music", "light", "reminder", "agenda", "exit"},
+            {
+                "time",
+                "date",
+                "weather",
+                "music",
+                "light",
+                "reminder",
+                "agenda",
+                "exit",
+                "mute",
+                "volume",
+                "restart",
+                "stop_media",
+                "system_help",
+            },
         )
 
     def test_time(self) -> None:
@@ -38,6 +52,21 @@ class TestParseIntent(unittest.TestCase):
 
     def test_unknown(self) -> None:
         self.assertEqual(parse_intent("blabla incomprehensible"), "unknown")
+
+    def test_mute(self) -> None:
+        self.assertEqual(parse_intent("active le mode mute"), "mute")
+
+    def test_volume(self) -> None:
+        self.assertEqual(parse_intent("augmente le volume"), "volume")
+
+    def test_restart(self) -> None:
+        self.assertEqual(parse_intent("redemarre le systeme"), "restart")
+
+    def test_stop_media_priority_over_exit(self) -> None:
+        self.assertEqual(parse_intent("stop la musique"), "stop_media")
+
+    def test_system_help(self) -> None:
+        self.assertEqual(parse_intent("aide systeme"), "system_help")
 
     def test_known_intents_have_non_empty_response(self) -> None:
         for intent in INTENT_REGISTRY:

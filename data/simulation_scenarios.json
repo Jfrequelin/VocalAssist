@@ -4,6 +4,11 @@
   {"user": "Donne-moi la meteo", "expected_intent": "weather"},
   {"user": "Allume la lumiere du salon", "expected_intent": "light"},
   {"user": "Lance de la musique", "expected_intent": "music"},
+  {"user": "Stop la musique", "expected_intent": "stop_media"},
+  {"user": "Passe en mode mute", "expected_intent": "mute"},
+  {"user": "Augmente le volume", "expected_intent": "volume"},
+  {"user": "Redemarre le systeme", "expected_intent": "restart"},
+  {"user": "Aide systeme", "expected_intent": "system_help"},
   {"user": "Mets un rappel pour demain", "expected_intent": "reminder"},
   {"user": "Qu'ai-je dans mon agenda", "expected_intent": "agenda"},
   {"user": "Merci, stop", "expected_intent": "exit"}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from src.assistant.intents import parse_intent
 from src.assistant.scenarios import load_scenarios
 
 
@@ -17,6 +18,12 @@ class TestScenarios(unittest.TestCase):
             self.assertIn("expected_intent", scenario)
             self.assertTrue(scenario["user"].strip())
             self.assertTrue(scenario["expected_intent"].strip())
+
+    def test_scenarios_expected_intents_are_detected(self) -> None:
+        scenarios = load_scenarios()
+        for scenario in scenarios:
+            detected = parse_intent(scenario["user"])
+            self.assertEqual(detected, scenario["expected_intent"])
 
 
 if __name__ == "__main__":
