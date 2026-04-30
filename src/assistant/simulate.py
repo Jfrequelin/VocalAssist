@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from src.assistant.intents import extract_slots, parse_intent, respond
-from src.assistant.scenarios import load_scenarios
+from src.assistant.intents import INTENT_REGISTRY, extract_slots, parse_intent, respond
+from src.assistant.scenarios import compute_functional_coverage, load_scenarios
 
 
 def run_simulation() -> None:
@@ -28,6 +28,11 @@ def run_simulation() -> None:
 
     total = len(scenarios)
     ratio = (correct / total) * 100 if total else 0
+    coverage = compute_functional_coverage(scenarios, set(INTENT_REGISTRY))
     print("\n=== Resume simulation ===")
     print(f"Scenarios valides: {correct}/{total}")
     print(f"Taux de reconnaissance d'intention: {ratio:.1f}%")
+    print(
+        "Couverture fonctionnelle intents: "
+        f"{coverage['coverage_ratio'] * 100:.1f}% ({len(coverage['covered_intents'])}/{len(INTENT_REGISTRY)})"
+    )

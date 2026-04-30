@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import datetime
 from typing import Callable, TypedDict
 
@@ -157,8 +158,23 @@ INTENT_REGISTRY: dict[str, IntentConfig] = {
 }
 
 
+def _normalize_text(message: str) -> str:
+    lowered = message.lower()
+    decomposed = unicodedata.normalize("NFKD", lowered)
+    no_diacritics = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return no_diacritics
+
+
+def _keyword_matches(text: str, keyword: str) -> bool:
+    if " " in keyword:
+        return keyword in text
+
+    pattern = rf"\b{re.escape(keyword)}\b"
+    return re.search(pattern, text) is not None
+
+
 def parse_intent(message: str) -> str:
-    text = message.lower()
+    text = _normalize_text(message)
 
     ordered_registry = sorted(
         INTENT_REGISTRY.items(),
@@ -168,14 +184,14 @@ def parse_intent(message: str) -> str:
 
     for intent, data in ordered_registry:
         keywords = data["keywords"]
-        if any(keyword in text for keyword in keywords):
+        if any(_keyword_matches(text, keyword) for keyword in keywords):
             return intent
 
     return "unknown"
 
 
 def extract_slots(message: str, intent: str) -> IntentSlots:
-    text = message.lower()
+    text = _normalize_text(message)
     slots: IntentSlots = {}
 
     if intent == "light":
