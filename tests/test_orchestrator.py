@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any
 from unittest.mock import patch
 
 from src.assistant.orchestrator import handle_message
@@ -13,7 +14,7 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(reply.intent, "time")
 
     @patch("src.assistant.orchestrator.LeonClient")
-    def test_critical_local_intent_does_not_call_leon(self, mock_leon_cls) -> None:
+    def test_critical_local_intent_does_not_call_leon(self, mock_leon_cls: Any) -> None:
         reply = handle_message("stop la musique", use_leon_fallback=True)
 
         self.assertEqual(reply.source, "local")
@@ -21,7 +22,7 @@ class TestOrchestrator(unittest.TestCase):
         mock_leon_cls.from_env.assert_not_called()
 
     @patch("src.assistant.orchestrator.LeonClient")
-    def test_temperature_local_slot_intent_does_not_call_leon(self, mock_leon_cls) -> None:
+    def test_temperature_local_slot_intent_does_not_call_leon(self, mock_leon_cls: Any) -> None:
         reply = handle_message("regle la temperature a 22", use_leon_fallback=True)
 
         self.assertEqual(reply.source, "local")
@@ -30,8 +31,8 @@ class TestOrchestrator(unittest.TestCase):
         mock_leon_cls.from_env.assert_not_called()
 
     @patch("src.assistant.orchestrator.LeonClient")
-    def test_unknown_uses_leon_when_available(self, mock_leon_cls) -> None:
-        mock_leon = mock_leon_cls.from_env.return_value
+    def test_unknown_uses_leon_when_available(self, mock_leon_cls: Any) -> None:
+        mock_leon: Any = mock_leon_cls.from_env.return_value
         mock_leon.ask.return_value = "Reponse Leon"
 
         reply = handle_message("explique la theorie des cordes", use_leon_fallback=True)
@@ -41,8 +42,8 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(reply.answer, "Reponse Leon")
 
     @patch("src.assistant.orchestrator.LeonClient")
-    def test_unknown_handles_unavailable_leon(self, mock_leon_cls) -> None:
-        mock_leon = mock_leon_cls.from_env.return_value
+    def test_unknown_handles_unavailable_leon(self, mock_leon_cls: Any) -> None:
+        mock_leon: Any = mock_leon_cls.from_env.return_value
         mock_leon.ask.return_value = None
 
         reply = handle_message("question inconnue", use_leon_fallback=True)
