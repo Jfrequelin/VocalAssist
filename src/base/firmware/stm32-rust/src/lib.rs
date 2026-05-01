@@ -1473,11 +1473,11 @@ pub fn process_transcript<'a>(
         };
     }
 
-    // Check wake word (case-insensitive)
-    let trimmed_lower = trimmed.to_lowercase();
-    let wake_word_lower = config.wake_word.to_lowercase();
+    // Check wake word (case-insensitive, no_std-compatible)
+    let trimmed_lower = normalize_ascii_lower_no_diacritics(trimmed);
+    let wake_word_lower = normalize_ascii_lower_no_diacritics(config.wake_word);
 
-    if !trimmed_lower.starts_with(&wake_word_lower) {
+    if !trimmed_lower.starts_with(wake_word_lower.as_str()) {
         runtime.state = BaseState::Idle;
         runtime.last_result = BaseResult::WakeWordMissing;
         return Decision {
