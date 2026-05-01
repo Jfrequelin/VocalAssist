@@ -6,6 +6,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use core::str;
+use heapless::Deque;
 
 /// Device runtime state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +84,181 @@ impl Runtime {
         } else {
             BaseState::Idle
         };
+    }
+}
+
+/// LED color abstraction for firmware drivers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LedColor {
+    Green,
+    Blue,
+    Yellow,
+    Orange,
+    Red,
+}
+
+/// LED behavior specification.
+///
+/// `blink_hz_x10` uses 1 decimal precision to avoid floating point in no_std:
+/// - 0   => fixed (no blink)
+/// - 5   => 0.5 Hz
+/// - 10  => 1.0 Hz
+/// - 15  => 1.5 Hz
+/// - 20  => 2.0 Hz
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LedPattern {
+    pub color: LedColor,
+    pub blink_hz_x10: u8,
+}
+
+/// Returns LED pattern associated with a runtime state.
+pub fn led_pattern_for(state: BaseState) -> LedPattern {
+    match state {
+        BaseState::Idle => LedPattern {
+            color: LedColor::Green,
+            blink_hz_x10: 0,
+        },
+        BaseState::Listening => LedPattern {
+            color: LedColor::Blue,
+            blink_hz_x10: 10,
+        },
+        BaseState::Sending => LedPattern {
+            color: LedColor::Yellow,
+            blink_hz_x10: 20,
+        },
+        BaseState::Speaking => LedPattern {
+            color: LedColor::Orange,
+            blink_hz_x10: 15,
+        },
+        BaseState::Muted => LedPattern {
+            color: LedColor::Red,
+            blink_hz_x10: 0,
+        },
+        BaseState::Error => LedPattern {
+            color: LedColor::Red,
+            blink_hz_x10: 5,
+        },
+    }
+}
+
+/// Device state contract aligned with `assistant.edge_device.EdgeDeviceState`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EdgeDeviceState {
+    pub muted: bool,
+    pub led_state: BaseState,
+    pub interaction_active: bool,
+    pub last_event: &'static str,
+}
+
+impl Default for EdgeDeviceState {
+    fn default() -> Self {
+        Self {
+            muted: false,
+            led_state: BaseState::Idle,
+            interaction_active: false,
+            last_event: "init",
+        }
+    }
+}
+
+/// Device state controller for button/mute/interaction transitions.
+pub struct EdgeDeviceController {
+    state: EdgeDeviceState,
+    events: Deque<&'static str, 16>,
+}
+
+impl EdgeDeviceController {
+    pub fn new() -> Self {
+        let mut controller = Self {
+            state: EdgeDeviceState::default(),
+            events: Deque::new(),
+        };
+        controller.log_event("init");
+        controller
+    }
+
+    fn log_event(&mut self, event: &'static str) {
+        if self.events.push_back(event).is_err() {
+            let _ = self.events.pop_front();
+            let _ = self.events.push_back(event);
+        }
+        self.state.last_event = event;
+    }
+
+    pub fn state(&self) -> &EdgeDeviceState {
+        &self.state
+    }
+
+    pub fn led_pattern(&self) -> LedPattern {
+        led_pattern_for(self.state.led_state)
+    }
+
+    pub fn events_len(&self) -> usize {
+        self.events.len()
+    }
+
+    pub fn set_mute(&mut self, enabled: bool) {
+        self.state.muted = enabled;
+        if enabled {
+            self.state.led_state = BaseState::Muted;
+            self.log_event("mute_on");
+        } else {
+            if !self.state.interaction_active {
+                self.state.led_state = BaseState::Idle;
+            }
+            self.log_event("mute_off");
+        }
+    }
+
+    pub fn toggle_mute(&mut self) -> bool {
+        self.set_mute(!self.state.muted);
+        self.state.muted
+    }
+
+    pub fn start_interaction(&mut self) {
+        self.state.interaction_active = true;
+        self.state.led_state = BaseState::Listening;
+        self.log_event("interaction_started");
+    }
+
+    pub fn mark_sending(&mut self) {
+        self.state.led_state = BaseState::Sending;
+        self.log_event("audio_sending");
+    }
+
+    pub fn mark_speaking(&mut self) {
+        self.state.led_state = if self.state.muted {
+            BaseState::Muted
+        } else {
+            BaseState::Speaking
+        };
+        self.log_event("response_speaking");
+    }
+
+    pub fn mark_error(&mut self) {
+        self.state.led_state = BaseState::Error;
+        self.state.interaction_active = false;
+        self.log_event("interaction_error");
+    }
+
+    pub fn finish_interaction(&mut self) {
+        self.state.interaction_active = false;
+        self.state.led_state = if self.state.muted {
+            BaseState::Muted
+        } else {
+            BaseState::Idle
+        };
+        self.log_event("interaction_finished");
+    }
+
+    pub fn press_button(&mut self) {
+        self.state.interaction_active = false;
+        self.state.led_state = if self.state.muted {
+            BaseState::Muted
+        } else {
+            BaseState::Idle
+        };
+        self.log_event("button_pressed");
     }
 }
 
@@ -271,5 +447,105 @@ mod tests {
         let decision = process_transcript(&mut runtime, &config, "");
         assert!(!decision.should_send);
         assert_eq!(decision.result, BaseResult::EmptyAudio);
+    }
+
+    #[test]
+    fn test_device_controller_transitions() {
+        let mut ctrl = EdgeDeviceController::new();
+
+        assert_eq!(ctrl.state().led_state, BaseState::Idle);
+        assert_eq!(ctrl.state().last_event, "init");
+
+        ctrl.start_interaction();
+        assert_eq!(ctrl.state().interaction_active, true);
+        assert_eq!(ctrl.state().led_state, BaseState::Listening);
+
+        ctrl.mark_sending();
+        assert_eq!(ctrl.state().led_state, BaseState::Sending);
+
+        ctrl.mark_speaking();
+        assert_eq!(ctrl.state().led_state, BaseState::Speaking);
+
+        ctrl.finish_interaction();
+        assert_eq!(ctrl.state().interaction_active, false);
+        assert_eq!(ctrl.state().led_state, BaseState::Idle);
+        assert_eq!(ctrl.state().last_event, "interaction_finished");
+    }
+
+    #[test]
+    fn test_mute_override_speaking() {
+        let mut ctrl = EdgeDeviceController::new();
+        ctrl.set_mute(true);
+        ctrl.mark_speaking();
+
+        assert_eq!(ctrl.state().muted, true);
+        assert_eq!(ctrl.state().led_state, BaseState::Muted);
+        assert_eq!(ctrl.state().last_event, "response_speaking");
+    }
+
+    #[test]
+    fn test_press_button_resets_interaction() {
+        let mut ctrl = EdgeDeviceController::new();
+        ctrl.start_interaction();
+        ctrl.press_button();
+
+        assert_eq!(ctrl.state().interaction_active, false);
+        assert_eq!(ctrl.state().led_state, BaseState::Idle);
+        assert_eq!(ctrl.state().last_event, "button_pressed");
+    }
+
+    #[test]
+    fn test_led_patterns_mapping() {
+        assert_eq!(
+            led_pattern_for(BaseState::Idle),
+            LedPattern {
+                color: LedColor::Green,
+                blink_hz_x10: 0
+            }
+        );
+        assert_eq!(
+            led_pattern_for(BaseState::Listening),
+            LedPattern {
+                color: LedColor::Blue,
+                blink_hz_x10: 10
+            }
+        );
+        assert_eq!(
+            led_pattern_for(BaseState::Sending),
+            LedPattern {
+                color: LedColor::Yellow,
+                blink_hz_x10: 20
+            }
+        );
+        assert_eq!(
+            led_pattern_for(BaseState::Speaking),
+            LedPattern {
+                color: LedColor::Orange,
+                blink_hz_x10: 15
+            }
+        );
+        assert_eq!(
+            led_pattern_for(BaseState::Muted),
+            LedPattern {
+                color: LedColor::Red,
+                blink_hz_x10: 0
+            }
+        );
+        assert_eq!(
+            led_pattern_for(BaseState::Error),
+            LedPattern {
+                color: LedColor::Red,
+                blink_hz_x10: 5
+            }
+        );
+    }
+
+    #[test]
+    fn test_event_log_is_bounded() {
+        let mut ctrl = EdgeDeviceController::new();
+        for _ in 0..32 {
+            ctrl.toggle_mute();
+        }
+        assert_eq!(ctrl.events_len(), 16);
     }
 }
