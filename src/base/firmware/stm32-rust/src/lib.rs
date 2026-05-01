@@ -943,6 +943,467 @@ impl EdgeDeviceController {
     }
 }
 
+// ============================================================
+// MACRO-012: Résilience — WiFi, HTTP, EEPROM, Monitoring
+// ============================================================
+
+/// WiFi connectivity status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WifiStatus {
+    Connected,
+    Disconnected,
+    /// Reconnection in progress; `attempt` counts from 1.
+    Reconnecting { attempt: u8 },
+    /// All retries exhausted — degraded mode.
+    Failed,
+}
+
+/// Network state with retry logic (no heap, all stack-allocated).
+#[derive(Debug, Clone)]
+pub struct NetworkState {
+    pub status: WifiStatus,
+    pub max_retries: u8,
+    /// Estimated retry interval in milliseconds (kept for host-side simulation).
+    pub retry_interval_ms: u32,
+    pub consecutive_failures: u8,
+}
+
+impl NetworkState {
+    pub fn new(max_retries: u8) -> Self {
+        Self {
+            status: WifiStatus::Connected,
+            max_retries,
+            retry_interval_ms: 2_000,
+            consecutive_failures: 0,
+        }
+    }
+
+    pub fn is_available(&self) -> bool {
+        self.status == WifiStatus::Connected
+    }
+
+    /// Called when a WiFi loss is detected.
+    pub fn on_disconnect(&mut self) -> WifiStatus {
+        self.status = WifiStatus::Reconnecting { attempt: 1 };
+        self.consecutive_failures = self.consecutive_failures.saturating_add(1);
+        self.status
+    }
+
+    /// Called on each reconnect tick.
+    pub fn on_reconnect_attempt(&mut self) -> WifiStatus {
+        match self.status {
+            WifiStatus::Reconnecting { attempt } => {
+                if attempt >= self.max_retries {
+                    self.status = WifiStatus::Failed;
+                } else {
+                    self.status = WifiStatus::Reconnecting {
+                        attempt: attempt + 1,
+                    };
+                }
+            }
+            _ => {}
+        }
+        self.status
+    }
+
+    /// Called when connection is re-established.
+    pub fn on_connected(&mut self) {
+        self.status = WifiStatus::Connected;
+        self.consecutive_failures = 0;
+    }
+}
+
+/// Offline pending command queue — buffers commands while WiFi is unavailable.
+pub struct PendingCommandQueue {
+    queue: Deque<HString<128>, 8>,
+}
+
+impl Default for PendingCommandQueue {
+    fn default() -> Self {
+        Self {
+            queue: Deque::new(),
+        }
+    }
+}
+
+impl PendingCommandQueue {
+    pub fn enqueue(&mut self, cmd: &str) -> Result<(), ()> {
+        let mut s: HString<128> = HString::new();
+        let _ = s.push_str(cmd);
+        self.queue.push_back(s).map_err(|_| ())
+    }
+
+    pub fn dequeue(&mut self) -> Option<HString<128>> {
+        self.queue.pop_front()
+    }
+
+    pub fn len(&self) -> usize {
+        self.queue.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.queue.is_empty()
+    }
+}
+
+/// HTTP response classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HttpOutcome {
+    /// 2xx success.
+    Ok,
+    /// 4xx client error.
+    ClientError { status: u16 },
+    /// 5xx server error.
+    ServerError { status: u16 },
+    /// Network-level timeout.
+    Timeout,
+    /// Connection refused / network unavailable.
+    Unreachable,
+}
+
+impl HttpOutcome {
+    pub fn from_status(code: u16) -> Self {
+        match code {
+            200..=299 => HttpOutcome::Ok,
+            400..=499 => HttpOutcome::ClientError { status: code },
+            500..=599 => HttpOutcome::ServerError { status: code },
+            _ => HttpOutcome::ClientError { status: code },
+        }
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        matches!(
+            self,
+            HttpOutcome::Timeout
+                | HttpOutcome::Unreachable
+                | HttpOutcome::ServerError { .. }
+        )
+    }
+}
+
+// ─── EEPROM-backed persistent state (MACRO-012-T3) ─────────────────────────
+
+/// State persisted across resets (simulates EEPROM pages on STM32).
+///
+/// `magic` must equal `PersistedState::MAGIC` for the struct to be
+/// considered valid after a read from flash.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersistedState {
+    pub wifi_ssid: HString<64>,
+    pub volume: u8,
+    pub muted: bool,
+    pub language: &'static str,
+    /// Validation marker — must be `MAGIC` for a valid page.
+    pub magic: u16,
+}
+
+impl Default for PersistedState {
+    fn default() -> Self {
+        let mut ssid: HString<64> = HString::new();
+        let _ = ssid.push_str("HomeNetwork");
+        Self {
+            wifi_ssid: ssid,
+            volume: 50,
+            muted: false,
+            language: "fr",
+            magic: Self::MAGIC,
+        }
+    }
+}
+
+impl PersistedState {
+    pub const MAGIC: u16 = 0xA55A;
+
+    pub fn is_valid(&self) -> bool {
+        self.magic == Self::MAGIC
+    }
+
+    /// Serialize to a fixed-size byte buffer (no std::io dependency).
+    /// Layout: [magic_hi, magic_lo, volume, muted, ssid_len, ssid_bytes…]
+    pub fn to_bytes(&self) -> heapless::Vec<u8, 128> {
+        let mut buf: heapless::Vec<u8, 128> = heapless::Vec::new();
+        let _ = buf.push((self.magic >> 8) as u8);
+        let _ = buf.push((self.magic & 0xFF) as u8);
+        let _ = buf.push(self.volume);
+        let _ = buf.push(self.muted as u8);
+        let ssid_bytes = self.wifi_ssid.as_bytes();
+        let len = ssid_bytes.len().min(63) as u8;
+        let _ = buf.push(len);
+        for &b in &ssid_bytes[..len as usize] {
+            if buf.push(b).is_err() {
+                break;
+            }
+        }
+        buf
+    }
+
+    /// Deserialize from raw bytes; returns `None` if magic is wrong or
+    /// the buffer is truncated.
+    pub fn from_bytes(buf: &[u8]) -> Option<Self> {
+        if buf.len() < 5 {
+            return None;
+        }
+        let magic = ((buf[0] as u16) << 8) | buf[1] as u16;
+        if magic != Self::MAGIC {
+            return None;
+        }
+        let volume = buf[2];
+        let muted = buf[3] != 0;
+        let ssid_len = buf[4] as usize;
+        if buf.len() < 5 + ssid_len {
+            return None;
+        }
+        let mut ssid: HString<64> = HString::new();
+        if let Ok(s) = str::from_utf8(&buf[5..5 + ssid_len]) {
+            let _ = ssid.push_str(s);
+        }
+        Some(Self {
+            wifi_ssid: ssid,
+            volume,
+            muted,
+            language: "fr",
+            magic,
+        })
+    }
+}
+
+// ─── Diagnostic monitoring (MACRO-012-T4) ──────────────────────────────────
+
+/// Error codes for diagnostic log entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ErrorCode {
+    None = 0,
+    WifiTimeout = 1,
+    HttpClientError = 2,
+    HttpServerError = 3,
+    TtsFailure = 4,
+    EepromCorrupt = 5,
+    QueueOverflow = 6,
+}
+
+/// Ring-buffer diagnostic log — keeps last 16 error codes.
+pub struct DiagnosticLog {
+    errors: Deque<ErrorCode, 16>,
+    pub error_count: u32,
+    pub last_error: ErrorCode,
+}
+
+impl Default for DiagnosticLog {
+    fn default() -> Self {
+        Self {
+            errors: Deque::new(),
+            error_count: 0,
+            last_error: ErrorCode::None,
+        }
+    }
+}
+
+impl DiagnosticLog {
+    pub fn record(&mut self, code: ErrorCode) {
+        self.error_count = self.error_count.saturating_add(1);
+        self.last_error = code;
+        if self.errors.push_back(code).is_err() {
+            let _ = self.errors.pop_front();
+            let _ = self.errors.push_back(code);
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.errors.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    pub fn last(&self) -> ErrorCode {
+        self.last_error
+    }
+}
+
+// ============================================================
+// MACRO-013: Pipeline Complet — orchestrateur E2E
+// ============================================================
+
+/// Step reached by the pipeline during a single transcript turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PipelineStep {
+    Idle,
+    WakeWordDetected,
+    /// A system intent (mute, volume…) was handled locally.
+    LocalSystemHandled,
+    /// An informative intent (time, date…) was handled locally with TTS.
+    LocalInformativeHandled,
+    /// A control intent was sent to remote assistant.
+    RemoteDispatched,
+    /// Command buffered — WiFi unavailable.
+    QueuedOffline,
+    /// TTS played successfully.
+    TtsPlayed,
+    /// Non-fatal error, device in Error state.
+    Error,
+}
+
+/// Full edge pipeline — assembles all MACRO-006→012 components.
+pub struct EdgePipeline {
+    pub controller: EdgeDeviceController,
+    pub tts: PiperTtsEngine,
+    pub playback: AudioPlayback,
+    pub audio_ctrl: AudioControlState,
+    pub network: NetworkState,
+    pub pending: PendingCommandQueue,
+    pub diag: DiagnosticLog,
+    pub snapshot: InformativeSnapshot,
+    pub step: PipelineStep,
+}
+
+impl EdgePipeline {
+    pub fn new() -> Self {
+        let mut tts = PiperTtsEngine::new("fr");
+        tts.load_model();
+        Self {
+            controller: EdgeDeviceController::new(),
+            tts,
+            playback: AudioPlayback::default(),
+            audio_ctrl: AudioControlState::default(),
+            network: NetworkState::new(3),
+            pending: PendingCommandQueue::default(),
+            diag: DiagnosticLog::default(),
+            snapshot: InformativeSnapshot::default(),
+            step: PipelineStep::Idle,
+        }
+    }
+
+    /// Full-turn processing — from raw transcript to TTS/dispatch.
+    ///
+    /// Priority order:
+    /// 1. Wake-word + VAD filter (`process_transcript`)
+    /// 2. System intents (stop media, mute, volume) → local
+    /// 3. Informative intents (time, date, weather…) → local TTS
+    /// 4. Control intents (light, music…) → remote if online, else queue
+    pub fn process(
+        &mut self,
+        runtime: &mut Runtime,
+        config: &Config,
+        transcript: &str,
+    ) -> PipelineStep {
+        let decision = process_transcript(runtime, config, transcript);
+
+        if decision.result != BaseResult::Accepted {
+            self.step = PipelineStep::Idle;
+            return self.step;
+        }
+
+        self.step = PipelineStep::WakeWordDetected;
+        let command = decision.command.unwrap_or("");
+
+        // 1. System intents — handled entirely locally
+        if let Some(sys_intent) = detect_system_intent(command) {
+            apply_system_intent(sys_intent, &mut self.controller, &mut self.audio_ctrl);
+            let response_text: &'static str = match sys_intent {
+                SystemIntent::StopMedia => "Musique arretee.",
+                SystemIntent::ToggleMute => {
+                    if self.audio_ctrl.muted {
+                        "Mode muet active."
+                    } else {
+                        "Son reactived."
+                    }
+                }
+                SystemIntent::VolumeUp => "Volume augmente.",
+                SystemIntent::VolumeDown => "Volume baisse.",
+            };
+            if !self.audio_ctrl.muted {
+                let _ = speak_response_local(
+                    &mut self.controller,
+                    &mut self.tts,
+                    &mut self.playback,
+                    response_text,
+                );
+            }
+            self.step = PipelineStep::LocalSystemHandled;
+            return self.step;
+        }
+
+        // 2. Informative intents — answered locally with TTS
+        if let Some(info_intent) = detect_informative_intent(command) {
+            let response = build_informative_response(info_intent, &self.snapshot);
+            match speak_response_local(
+                &mut self.controller,
+                &mut self.tts,
+                &mut self.playback,
+                response.as_str(),
+            ) {
+                Ok(()) => {
+                    self.step = PipelineStep::LocalInformativeHandled;
+                }
+                Err(_) => {
+                    self.diag.record(ErrorCode::TtsFailure);
+                    self.step = PipelineStep::Error;
+                }
+            }
+            return self.step;
+        }
+
+        // 3. Control intents — remote if online, else queue
+        let ctrl_decision = handle_control_intent(command, &mut self.controller);
+        if ctrl_decision.should_send_remote {
+            if self.network.is_available() {
+                // Simulate remote dispatch — play local TTS confirmation
+                if !ctrl_decision.response_tts.is_empty() {
+                    match speak_response_local(
+                        &mut self.controller,
+                        &mut self.tts,
+                        &mut self.playback,
+                        ctrl_decision.response_tts.as_str(),
+                    ) {
+                        Ok(()) => {}
+                        Err(_) => {
+                            self.diag.record(ErrorCode::TtsFailure);
+                        }
+                    }
+                }
+                self.step = PipelineStep::RemoteDispatched;
+            } else {
+                // Offline — buffer command
+                if self.pending.enqueue(command).is_err() {
+                    self.diag.record(ErrorCode::QueueOverflow);
+                    self.step = PipelineStep::Error;
+                } else {
+                    self.step = PipelineStep::QueuedOffline;
+                }
+            }
+            return self.step;
+        }
+
+        // Control handled locally (restart/exit)
+        if ctrl_decision.intent.is_some() {
+            self.step = PipelineStep::LocalSystemHandled;
+            return self.step;
+        }
+
+        self.step = PipelineStep::Idle;
+        self.step
+    }
+
+    /// Flush pending commands when WiFi reconnects.
+    /// Returns the number of commands flushed.
+    pub fn flush_pending(&mut self) -> usize {
+        let mut count = 0;
+        while let Some(_cmd) = self.pending.dequeue() {
+            // In production this would re-dispatch via HTTP.
+            count += 1;
+        }
+        count
+    }
+}
+
+impl Default for EdgePipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Decision structure from transcript processing
 #[derive(Debug, Clone)]
 pub struct Decision<'a> {
@@ -1506,5 +1967,304 @@ mod tests {
         assert!(ok.is_ok());
         assert_eq!(ctrl_ok.state().led_state, BaseState::Speaking);
         assert_eq!(playback_ok.queue_len(), 1);
+    }
+
+    // ─── MACRO-012: WiFi / Network ─────────────────────────────────────────
+
+    #[test]
+    fn test_wifi_reconnect_sequence() {
+        let mut net = NetworkState::new(3);
+        assert_eq!(net.status, WifiStatus::Connected);
+
+        let s1 = net.on_disconnect();
+        assert_eq!(s1, WifiStatus::Reconnecting { attempt: 1 });
+
+        let s2 = net.on_reconnect_attempt();
+        assert_eq!(s2, WifiStatus::Reconnecting { attempt: 2 });
+
+        let s3 = net.on_reconnect_attempt();
+        assert_eq!(s3, WifiStatus::Reconnecting { attempt: 3 });
+
+        // max_retries == 3 → next attempt triggers Failed
+        let s4 = net.on_reconnect_attempt();
+        assert_eq!(s4, WifiStatus::Failed);
+
+        net.on_connected();
+        assert_eq!(net.status, WifiStatus::Connected);
+        assert_eq!(net.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn test_wifi_consecutive_failures_count() {
+        let mut net = NetworkState::new(1);
+        net.on_disconnect();
+        assert_eq!(net.consecutive_failures, 1);
+        net.on_connected();
+        net.on_disconnect();
+        assert_eq!(net.consecutive_failures, 1); // reset on connect then re-incremented
+    }
+
+    // ─── MACRO-012: PendingCommandQueue ────────────────────────────────────
+
+    #[test]
+    fn test_pending_queue_enqueue_dequeue() {
+        let mut q = PendingCommandQueue::default();
+        assert!(q.is_empty());
+
+        q.enqueue("allume la lumiere").unwrap();
+        q.enqueue("mets de la musique").unwrap();
+        assert_eq!(q.len(), 2);
+
+        let first = q.dequeue().unwrap();
+        assert_eq!(first.as_str(), "allume la lumiere");
+        assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn test_pending_queue_overflow() {
+        let mut q = PendingCommandQueue::default();
+        for i in 0..8u8 {
+            let cmd = if i % 2 == 0 { "cmd a" } else { "cmd b" };
+            q.enqueue(cmd).unwrap();
+        }
+        // Queue is full (capacity = 8)
+        let overflow = q.enqueue("one more");
+        assert!(overflow.is_err());
+    }
+
+    // ─── MACRO-012: HttpOutcome ─────────────────────────────────────────────
+
+    #[test]
+    fn test_http_outcome_classification() {
+        assert_eq!(HttpOutcome::from_status(200), HttpOutcome::Ok);
+        assert_eq!(
+            HttpOutcome::from_status(404),
+            HttpOutcome::ClientError { status: 404 }
+        );
+        assert_eq!(
+            HttpOutcome::from_status(503),
+            HttpOutcome::ServerError { status: 503 }
+        );
+
+        assert!(!HttpOutcome::Ok.is_retryable());
+        assert!(HttpOutcome::Timeout.is_retryable());
+        assert!(HttpOutcome::Unreachable.is_retryable());
+        assert!(HttpOutcome::ServerError { status: 500 }.is_retryable());
+        assert!(!HttpOutcome::ClientError { status: 400 }.is_retryable());
+    }
+
+    // ─── MACRO-012: PersistedState / EEPROM ─────────────────────────────────
+
+    #[test]
+    fn test_persisted_state_roundtrip() {
+        let state = PersistedState::default();
+        assert!(state.is_valid());
+
+        let bytes = state.to_bytes();
+        let recovered = PersistedState::from_bytes(&bytes).expect("should deserialize");
+
+        assert_eq!(recovered.volume, state.volume);
+        assert_eq!(recovered.muted, state.muted);
+        assert_eq!(recovered.wifi_ssid.as_str(), state.wifi_ssid.as_str());
+        assert!(recovered.is_valid());
+    }
+
+    #[test]
+    fn test_persisted_state_corrupt_magic() {
+        let mut bytes = PersistedState::default().to_bytes();
+        bytes[0] = 0xDE; // corrupt magic high byte
+        bytes[1] = 0xAD;
+        let result = PersistedState::from_bytes(&bytes);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_persisted_state_truncated_buffer() {
+        let result = PersistedState::from_bytes(&[0xA5, 0x5A, 50]); // too short
+        assert!(result.is_none());
+    }
+
+    // ─── MACRO-012: DiagnosticLog ───────────────────────────────────────────
+
+    #[test]
+    fn test_diagnostic_log_records_errors() {
+        let mut log = DiagnosticLog::default();
+        assert!(log.is_empty());
+
+        log.record(ErrorCode::WifiTimeout);
+        log.record(ErrorCode::TtsFailure);
+        assert_eq!(log.len(), 2);
+        assert_eq!(log.error_count, 2);
+        assert_eq!(log.last(), ErrorCode::TtsFailure);
+    }
+
+    #[test]
+    fn test_diagnostic_log_is_bounded() {
+        let mut log = DiagnosticLog::default();
+        for _ in 0..20 {
+            log.record(ErrorCode::HttpServerError);
+        }
+        assert_eq!(log.len(), 16); // ring buffer capacity
+        assert_eq!(log.error_count, 20);
+    }
+
+    // ─── MACRO-013: EdgePipeline E2E ───────────────────────────────────────
+
+    #[test]
+    fn test_pipeline_local_informative_time() {
+        let config = Config::new("nova");
+        let mut runtime = Runtime::new(&config);
+        let mut pipeline = EdgePipeline::new();
+        pipeline.snapshot.hour = 9;
+        pipeline.snapshot.minute = 15;
+
+        let step = pipeline.process(&mut runtime, &config, "nova quelle heure est-il");
+        assert_eq!(step, PipelineStep::LocalInformativeHandled);
+        assert_eq!(pipeline.playback.queue_len(), 1);
+        assert_eq!(pipeline.controller.state().led_state, BaseState::Speaking);
+    }
+
+    #[test]
+    fn test_pipeline_local_mute_toggle() {
+        let config = Config::new("nova");
+        let mut runtime = Runtime::new(&config);
+        let mut pipeline = EdgePipeline::new();
+
+        let step = pipeline.process(&mut runtime, &config, "nova mode muet");
+        assert_eq!(step, PipelineStep::LocalSystemHandled);
+        assert!(pipeline.audio_ctrl.muted);
+    }
+
+    #[test]
+    fn test_pipeline_remote_dispatch_online() {
+        let config = Config::new("nova");
+        let mut runtime = Runtime::new(&config);
+        let mut pipeline = EdgePipeline::new();
+
+        assert!(pipeline.network.is_available());
+        let step = pipeline.process(&mut runtime, &config, "nova allume la lumiere du salon");
+        assert_eq!(step, PipelineStep::RemoteDispatched);
+        assert_eq!(pipeline.controller.state().led_state, BaseState::Speaking);
+    }
+
+    #[test]
+    fn test_pipeline_offline_queues_command() {
+        let config = Config::new("nova");
+        let mut runtime = Runtime::new(&config);
+        let mut pipeline = EdgePipeline::new();
+
+        // Simulate WiFi loss
+        pipeline.network.status = WifiStatus::Disconnected;
+        let step = pipeline.process(&mut runtime, &config, "nova allume la lumiere");
+        assert_eq!(step, PipelineStep::QueuedOffline);
+        assert_eq!(pipeline.pending.len(), 1);
+
+        // Simulate reconnect and flush
+        pipeline.network.on_connected();
+        let flushed = pipeline.flush_pending();
+        assert_eq!(flushed, 1);
+        assert!(pipeline.pending.is_empty());
+    }
+
+    #[test]
+    fn test_pipeline_rejected_no_wake_word() {
+        let config = Config::new("nova");
+        let mut runtime = Runtime::new(&config);
+        let mut pipeline = EdgePipeline::new();
+
+        let step = pipeline.process(&mut runtime, &config, "allume la lumiere");
+        assert_eq!(step, PipelineStep::Idle);
+    }
+
+    #[test]
+    fn test_pipeline_volume_stop_media() {
+        let config = Config::new("nova");
+        let mut runtime = Runtime::new(&config);
+        let mut pipeline = EdgePipeline::new();
+        pipeline.audio_ctrl.media_active = true;
+
+        let step = pipeline.process(&mut runtime, &config, "nova pause musique");
+        assert_eq!(step, PipelineStep::LocalSystemHandled);
+        assert!(!pipeline.audio_ctrl.media_active);
+        assert!(pipeline.audio_ctrl.stop_signal);
+    }
+
+    // ─── MACRO-013-T4: Stress / Perf ───────────────────────────────────────
+
+    #[test]
+    fn test_pipeline_stress_1000_alternating_turns() {
+        let config = Config::new("nova");
+        let mut runtime = Runtime::new(&config);
+        let mut pipeline = EdgePipeline::new();
+
+        let queries = [
+            "nova quelle heure est-il",
+            "nova allume la lumiere du salon",
+            "nova augmente le son",
+            "nova mets de la musique",
+            "nova donne la date",
+        ];
+
+        for i in 0..1000usize {
+            let q = queries[i % queries.len()];
+            // Reset runtime state without changing config
+            runtime.state = BaseState::Idle;
+            runtime.muted = false;
+            // Flush playback queue each turn to avoid overflow
+            while pipeline.playback.play_next().is_some() {}
+            pipeline.process(&mut runtime, &config, q);
+        }
+
+        // No panics, no memory corruption — we simply verify the pipeline
+        // is still in a consistent state
+        assert!(pipeline.diag.error_count < 100);
+    }
+
+    #[test]
+    fn test_pipeline_memory_bound_no_heap_growth() {
+        // All heapless structures have fixed capacity — verify key ones
+        // (compile-time check via type system, runtime check via len vs capacity)
+        let pipeline = EdgePipeline::new();
+
+        // TTS cache: max 1 entry of PcmAudio<2048>
+        assert_eq!(pipeline.tts.cache_memory_bytes(), 0); // nothing cached yet
+
+        // Pending queue max capacity = 8
+        let mut q = PendingCommandQueue::default();
+        for _ in 0..8 {
+            let _ = q.enqueue("test command padding to fill capacity");
+        }
+        assert_eq!(q.len(), 8);
+
+        // Diagnostic ring: capped at 16
+        let mut diag = DiagnosticLog::default();
+        for _ in 0..50 {
+            diag.record(ErrorCode::WifiTimeout);
+        }
+        assert_eq!(diag.len(), 16);
+    }
+
+    #[test]
+    fn test_pipeline_error_recovery_after_tts_failure() {
+        let config = Config::new("nova");
+        let mut runtime = Runtime::new(&config);
+        let mut pipeline = EdgePipeline::new();
+
+        // Force TTS into invalid state by unloading the model
+        pipeline.tts.model_loaded = false;
+
+        // Informative intent will fail TTS
+        let step = pipeline.process(&mut runtime, &config, "nova quelle heure est-il");
+        assert_eq!(step, PipelineStep::Error);
+        assert_eq!(pipeline.diag.last(), ErrorCode::TtsFailure);
+        assert_eq!(pipeline.diag.error_count, 1);
+
+        // Reload model — next turn should recover
+        pipeline.tts.load_model();
+        runtime.state = BaseState::Idle;
+        runtime.muted = false;
+        while pipeline.playback.play_next().is_some() {}
+        let step2 = pipeline.process(&mut runtime, &config, "nova quelle heure est-il");
+        assert_eq!(step2, PipelineStep::LocalInformativeHandled);
     }
 }
