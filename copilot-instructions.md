@@ -197,6 +197,121 @@ tests/fixtures/secrets.py # Données de test
 - [ ] Vérifier `.env` et `*.pem` pas stagés: `git diff --cached --name-only | grep -E ".env|.pem|.key"`
 - [ ] OUI à tout? → `git push` (le hook pre-push fera la vérification finale)
 
+## Contrainte: Priorité aux Solutions Open Source
+
+**Principe Directeur**: Utiliser des solutions open source pour tous les composants critiques du projet.
+
+### ✅ Critères de Sélection
+
+Quand choisir une dépendance:
+
+1. **Préférence absolue: Open Source (MIT, Apache 2.0, GPL 3.0, etc.)**
+   - Audit de sécurité possible
+   - Pas de vendor lock-in
+   - Support communautaire actif
+   - Exemple: FastAPI, pytest, Piper TTS
+
+2. **Acceptable: Dual licensing (open source + commercial)**
+   - Ex: PostgreSQL, Redis
+   - Mais version open source doit être viable en production
+
+3. **À éviter: Propriétaire/Freemium**
+   - Risque de dépendance
+   - Coûts imprévisibles
+   - Incompatible avec la philosophie du projet
+   - Exception: évaluation temporaire (avec issue GitHub de limitation)
+
+### 📚 Stack Open Source Recommandé
+
+#### Backend/API
+- **Framework**: FastAPI (MIT) - au lieu de propriétaire
+- **ORM**: SQLAlchemy (MIT)
+- **Task Queue**: Celery (BSD)
+- **Cache**: Redis (BSD)
+- **Database**: PostgreSQL (PostgreSQL License - like BSD)
+
+#### Vocal/Audio
+- **STT**: Faster-Whisper (MIT) - basé sur OpenAI Whisper
+- **TTS**: Piper (MIT) - par rhasspy community
+- **Wake Word**: PocketSphinx (BSD) ou Rhasspy
+- **Audio I/O**: PyAudio, sounddevice, librosa (BSD/MIT)
+- **Audio Processing**: SciPy, NumPy (BSD)
+
+#### Firmware Embedded
+- **Language**: Rust (MIT/Apache 2.0) - au lieu de C propriétaire
+- **Build**: Cargo, CMake (MIT/BSD)
+- **RTOS**: FreeRTOS (MIT) si besoin
+- **HAL**: stm32l4xx-hal, stm32h7xx-hal (MIT/Apache)
+- **Libraries**: cortex-m, embedded-hal ecosystem
+
+#### Machine Learning
+- **Framework**: PyTorch (BSD) ou scikit-learn (BSD)
+- **Inference**: ONNX (MIT)
+- **Quantization**: TensorRT alternatives open source
+
+#### Infrastructure/DevOps
+- **Container**: Docker (Moby - Apache 2.0)
+- **Orchestration**: Kubernetes (Apache 2.0) si scaling
+- **CI/CD**: GitHub Actions (free tier) ou Gitea Runners
+- **Monitoring**: Prometheus + Grafana (Apache 2.0 + AGPL)
+- **Logging**: ELK Stack variants open source
+
+#### Frontend
+- **Framework**: Vue.js / React / Svelte (MIT)
+- **Design**: Bootstrap (MIT) ou Tailwind (MIT)
+- **Charts**: Chart.js (MIT)
+
+### 🚫 Dépendances Propriétaires à Remplacer
+
+Si rencontré:
+
+| Propriétaire | Alternative Open Source | Justification |
+|--------------|--------------------------|---------------|
+| Nuance Speech | Whisper + FastWhisper | Gratuit, meilleure qualité |
+| Google TTS | Piper TTS | Embarquable, plus rapide |
+| AWS Lambda | FaaS open source | Eviter vendor lock-in |
+| Auth0 | Keycloak, Authentic. | Contrôle complet |
+| Sendgrid | Postfix, Mailgun open | Réduction coûts |
+
+### 📋 Checklist pour chaque dépendance
+
+Avant d'ajouter une dépendance (pip, cargo, npm):
+
+```bash
+# 1. Vérifier licence
+grep -i "license" /path/to/package/LICENSE
+# ✅ MIT, Apache 2.0, BSD, GPL 3.0
+# ❌ Propriétaire, Freemium, Cloud-only
+
+# 2. Vérifier activité GitHub
+gh repo view <owner>/<repo> --json updatedAt,stargazers,forks
+# ✅ Dernière activité < 3 mois, 100+ stars
+# ❌ Abandonné, activité < 1 an
+
+# 3. Vérifier taille/overhead
+# ❌ Dépendance unique qui impose 50+ transitive deps
+# ✅ Capable fonctionnelle isolée
+
+# 4. Vérifier sécurité
+# pip-audit nom_package
+# cargo audit (si Rust)
+# npm audit (si JavaScript)
+```
+
+### 🔗 Ressources Open Source du Projet
+
+**Core Components**:
+- STM32 Firmware: Rust + cortex-m (MIT)
+- Backend: FastAPI + PostgreSQL + SQLAlchemy (MIT/BSD)
+- Audio: Whisper + Piper (MIT)
+- Testing: pytest (MIT)
+- Typing: Pylance + type stubs (MIT)
+
+**Documentação**:
+- [Open Source Initiative](https://opensource.org/licenses) - Liste des licences approuvées
+- [SPDX License List](https://spdx.org/licenses/) - Identifiant standardisé
+- [choosealicense.com](https://choosealicense.com/) - Guide choix licence
+
 ---
 
 **Rappel**: Les secrets commités deviennent publiquement accessibles. L'historique Git ne les efface pas.
