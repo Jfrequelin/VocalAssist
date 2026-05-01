@@ -118,6 +118,120 @@ class HomeAssistantLightProvider:
 
 
 @dataclass
+class HomeAssistantSceneProvider:
+    """Activate a named scene via Home Assistant REST API."""
+
+    base_url: str
+    token: str
+    scene_entities: dict[str, str]
+    timeout_seconds: float = 5.0
+
+    @classmethod
+    def from_env(cls) -> "HomeAssistantSceneProvider | None":
+        base_url = os.getenv("HOME_ASSISTANT_URL")
+        token = os.getenv("HOME_ASSISTANT_TOKEN")
+        if not base_url or not token:
+            return None
+
+        scene_entities: dict[str, str] = {}
+        for name in ["soiree", "travail", "nuit", "film", "detente"]:
+            env_name = f"HOME_ASSISTANT_SCENE_{name.upper()}"
+            entity_id = os.getenv(env_name)
+            if entity_id:
+                scene_entities[name] = entity_id.strip()
+
+        if not scene_entities:
+            return None
+
+        return cls(
+            base_url=base_url.rstrip("/"),
+            token=token.strip(),
+            scene_entities=scene_entities,
+            timeout_seconds=max(0.1, float(os.getenv("HOME_ASSISTANT_TIMEOUT_SECONDS", "5"))),
+        )
+
+    def execute(self, slots: Mapping[str, object]) -> str:
+        scene_name = str(slots.get("scene", "")).lower().strip()
+        entity_id = self.scene_entities.get(scene_name)
+        if not entity_id:
+            available = ", ".join(self.scene_entities.keys()) or "aucune"
+            raise ProviderUnavailableError(f"scene_inconnue:{scene_name} (disponibles: {available})")
+
+        payload = json.dumps({"entity_id": entity_id}).encode("utf-8")
+        req = request.Request(
+            f"{self.base_url}/api/services/scene/turn_on",
+            data=payload,
+            headers=_build_bearer_headers(self.token),
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds):
+                pass
+        except (error.URLError, TimeoutError, ValueError, OSError) as exc:
+            raise ProviderUnavailableError("home_assistant_unavailable") from exc
+
+        return f"Domotique Home Assistant: scene {scene_name} activee."
+
+
+@dataclass
+class HomeAssistantClimateProvider:
+    """Set temperature target on a thermostat entity via Home Assistant REST API."""
+
+    base_url: str
+    token: str
+    climate_entity_id: str
+    min_temp: float = 10.0
+    max_temp: float = 30.0
+    timeout_seconds: float = 5.0
+
+    @classmethod
+    def from_env(cls) -> "HomeAssistantClimateProvider | None":
+        base_url = os.getenv("HOME_ASSISTANT_URL")
+        token = os.getenv("HOME_ASSISTANT_TOKEN")
+        entity_id = os.getenv("HOME_ASSISTANT_CLIMATE_ENTITY")
+        if not base_url or not token or not entity_id:
+            return None
+
+        return cls(
+            base_url=base_url.rstrip("/"),
+            token=token.strip(),
+            climate_entity_id=entity_id.strip(),
+            min_temp=float(os.getenv("HOME_ASSISTANT_CLIMATE_MIN_TEMP", "10")),
+            max_temp=float(os.getenv("HOME_ASSISTANT_CLIMATE_MAX_TEMP", "30")),
+            timeout_seconds=max(0.1, float(os.getenv("HOME_ASSISTANT_TIMEOUT_SECONDS", "5"))),
+        )
+
+    def execute(self, slots: Mapping[str, object]) -> str:
+        raw_temp = slots.get("value") or slots.get("temperature")
+        try:
+            target = float(str(raw_temp))
+        except (TypeError, ValueError) as exc:
+            raise ProviderUnavailableError("temperature_invalide") from exc
+
+        if not (self.min_temp <= target <= self.max_temp):
+            raise ProviderUnavailableError(
+                f"temperature_hors_plage:{target} (min={self.min_temp}, max={self.max_temp})"
+            )
+
+        payload = json.dumps(
+            {"entity_id": self.climate_entity_id, "temperature": target}
+        ).encode("utf-8")
+        req = request.Request(
+            f"{self.base_url}/api/services/climate/set_temperature",
+            data=payload,
+            headers=_build_bearer_headers(self.token),
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds):
+                pass
+        except (error.URLError, TimeoutError, ValueError, OSError) as exc:
+            raise ProviderUnavailableError("home_assistant_unavailable") from exc
+
+        return f"Domotique Home Assistant: thermostat regle a {target:.0f} degres."
+
+
+@dataclass
 class WeatherProvider:
     url_template: str
     timeout_seconds: float = 5.0
@@ -239,6 +353,14 @@ class ProviderRegistry:
         light_provider = HomeAssistantLightProvider.from_env()
         if light_provider is not None:
             providers["light"] = light_provider
+
+        scene_provider = HomeAssistantSceneProvider.from_env()
+        if scene_provider is not None:
+            providers["scene"] = scene_provider
+
+        climate_provider = HomeAssistantClimateProvider.from_env()
+        if climate_provider is not None:
+            providers["temperature"] = climate_provider
 
         weather_provider = WeatherProvider.from_env()
         if weather_provider is not None:
