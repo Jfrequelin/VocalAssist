@@ -4,12 +4,18 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from src.assistant.orchestrator import LEON_CIRCUIT_BREAKER, handle_message, reset_leon_circuit_breaker
+from src.assistant.orchestrator import (
+    LEON_CIRCUIT_BREAKER,
+    handle_message,
+    reset_leon_circuit_breaker,
+    reset_pending_clarifications,
+)
 
 
 class TestOrchestrator(unittest.TestCase):
     def setUp(self) -> None:
         reset_leon_circuit_breaker()
+        reset_pending_clarifications()
         LEON_CIRCUIT_BREAKER.failure_threshold = 3
         LEON_CIRCUIT_BREAKER.cooldown_seconds = 30.0
 
@@ -87,6 +93,51 @@ class TestOrchestrator(unittest.TestCase):
 
         self.assertEqual(reply.source, "local")
         self.assertEqual(reply.routing_trace.get("reason"), "fallback_disabled")
+
+    def test_light_missing_room_triggers_clarification(self) -> None:
+        reply = handle_message("allume la lumiere", use_leon_fallback=True, conversation_id="conv-1")
+
+        self.assertEqual(reply.intent, "light")
+        self.assertEqual(reply.source, "local-clarification")
+        self.assertEqual(reply.routing_trace.get("route"), "local-clarification")
+        self.assertEqual(reply.routing_trace.get("slot"), "room")
+        self.assertIn("piece", reply.answer.lower())
+
+    def test_clarification_followup_resolves_light_room(self) -> None:
+        first = handle_message("allume la lumiere", use_leon_fallback=True, conversation_id="conv-2")
+        self.assertEqual(first.source, "local-clarification")
+
+        second = handle_message("salon", use_leon_fallback=True, conversation_id="conv-2")
+        self.assertEqual(second.source, "local")
+        self.assertEqual(second.intent, "light")
+        self.assertEqual(second.routing_trace.get("reason"), "clarification_resolved")
+        self.assertIn("salon", second.answer)
+
+    def test_light_ambiguous_room_triggers_clarification(self) -> None:
+        reply = handle_message(
+            "allume la lumiere du salon ou de la cuisine",
+            use_leon_fallback=True,
+            conversation_id="conv-3",
+        )
+        self.assertEqual(reply.source, "local-clarification")
+        self.assertEqual(reply.routing_trace.get("slot"), "room")
+        self.assertIn("exactement", reply.answer.lower())
+
+    def test_weather_missing_city_triggers_clarification(self) -> None:
+        reply = handle_message("meteo", use_leon_fallback=True, conversation_id="conv-4")
+        self.assertEqual(reply.source, "local-clarification")
+        self.assertEqual(reply.intent, "weather")
+        self.assertEqual(reply.routing_trace.get("slot"), "city")
+
+    def test_weather_followup_city_resolves(self) -> None:
+        first = handle_message("meteo", use_leon_fallback=True, conversation_id="conv-5")
+        self.assertEqual(first.source, "local-clarification")
+
+        second = handle_message("a paris", use_leon_fallback=True, conversation_id="conv-5")
+        self.assertEqual(second.source, "local")
+        self.assertEqual(second.intent, "weather")
+        self.assertEqual(second.routing_trace.get("reason"), "clarification_resolved")
+        self.assertIn("paris", second.answer)
 
     @patch("src.assistant.orchestrator.LeonClient")
     def test_repeated_failures_open_circuit(self, mock_leon_cls: Any) -> None:
