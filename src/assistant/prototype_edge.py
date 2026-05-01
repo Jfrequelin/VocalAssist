@@ -77,10 +77,8 @@ def _process_audio_segment(
 
     controller.mark_speaking()
     print(f"Edge(state): {controller.describe()}")
-    spoken = tts.synthesize(
-        "Payload accepte "
-        f"(cid={response.get('correlation_id')}, bytes={response.get('received_bytes')})"
-    )
+    answer = str(response.get("answer", "Payload accepte."))
+    spoken = tts.synthesize(answer)
     if controller.state.muted:
         print("Edge(TTS): muet, restitution audio supprimee")
     else:
@@ -90,7 +88,8 @@ def _process_audio_segment(
     print(f"Edge(state): {controller.describe()}")
     print(
         "Edge: payload accepte "
-        f"(cid={response.get('correlation_id')}, bytes={response.get('received_bytes')})"
+        f"(cid={response.get('correlation_id')}, bytes={response.get('received_bytes')}, "
+        f"intent={response.get('intent')}, source={response.get('source')})"
     )
 
 

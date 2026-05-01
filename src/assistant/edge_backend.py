@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, cast
 
+from src.assistant.orchestrator import handle_message
+
 REQUIRED_FIELDS = {
     "correlation_id",
     "device_id",
@@ -64,10 +66,27 @@ def handle_edge_audio_request(raw_body: bytes) -> tuple[int, dict[str, Any]]:
         return 400, {"status": "error", "reason": validation_error}
 
     audio_bytes = base64.b64decode(str(payload["audio_base64"]).encode("ascii"), validate=True)
+    try:
+        command = audio_bytes.decode("utf-8").strip()
+    except UnicodeDecodeError:
+        return 400, {"status": "error", "reason": "invalid_audio_utf8"}
+
+    if not command:
+        return 400, {"status": "error", "reason": "empty_command"}
+
+    # Enable Leon fallback for unknown intents; if not configured, returns default fallback answer
+    reply = handle_message(
+        command,
+        use_leon_fallback=True,
+        correlation_id=str(payload["correlation_id"]),
+    )
     return 200, {
         "status": "accepted",
         "correlation_id": str(payload["correlation_id"]),
         "received_bytes": len(audio_bytes),
+        "intent": reply.intent,
+        "source": reply.source,
+        "answer": reply.answer,
     }
 
 

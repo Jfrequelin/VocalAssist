@@ -53,7 +53,13 @@ class TestPrototypeEdgeProcessAudioSegment(unittest.TestCase):
     @patch("src.assistant.prototype_edge.build_edge_audio_payload")
     def test_process_audio_segment_speaks_when_unmuted(self, mock_build: Any, mock_send: Any) -> None:
         mock_build.return_value = object()
-        mock_send.return_value = {"correlation_id": "cid-1", "received_bytes": 12}
+        mock_send.return_value = {
+            "correlation_id": "cid-1",
+            "received_bytes": 12,
+            "intent": "light",
+            "source": "local",
+            "answer": "Simulation domotique: lumiere du salon allumee.",
+        }
 
         with patch("builtins.print") as mock_print:
             _process_audio_segment(
@@ -68,7 +74,7 @@ class TestPrototypeEdgeProcessAudioSegment(unittest.TestCase):
             )
 
         printed = "\n".join(call.args[0] for call in mock_print.call_args_list if call.args)
-        self.assertIn("Edge(TTS): Payload accepte", printed)
+        self.assertIn("Edge(TTS): Simulation domotique: lumiere du salon allumee.", printed)
         self.assertEqual(self.controller.state.last_event, "interaction_finished")
         self.assertFalse(self.controller.state.interaction_active)
 
@@ -76,7 +82,13 @@ class TestPrototypeEdgeProcessAudioSegment(unittest.TestCase):
     @patch("src.assistant.prototype_edge.build_edge_audio_payload")
     def test_process_audio_segment_respects_mute(self, mock_build: Any, mock_send: Any) -> None:
         mock_build.return_value = object()
-        mock_send.return_value = {"correlation_id": "cid-2", "received_bytes": 10}
+        mock_send.return_value = {
+            "correlation_id": "cid-2",
+            "received_bytes": 10,
+            "intent": "weather",
+            "source": "local",
+            "answer": "Simulation meteo: ciel degage, 21 degres.",
+        }
         self.controller.set_mute(True)
 
         with patch("builtins.print") as mock_print:

@@ -46,13 +46,16 @@ class TestEdgeAudio(unittest.TestCase):
             sample_rate_hz=16000,
             channels=1,
             encoding="pcm16le",
-            audio_base64="YWJj",
+            audio_base64="cXVlbGxlIGhldXJlIGVzdCBpbA==",
         )
         status, response = handle_edge_audio_request(json.dumps(payload.to_dict()).encode("utf-8"))
 
         self.assertEqual(status, 200)
         self.assertEqual(response["status"], "accepted")
         self.assertEqual(response["correlation_id"], "cid-2")
+        self.assertEqual(response["intent"], "time")
+        self.assertEqual(response["source"], "local")
+        self.assertIn("Il est", response["answer"])
 
     def test_backend_rejects_invalid_payload(self) -> None:
         status, response = handle_edge_audio_request(b"{}")
@@ -79,7 +82,7 @@ class TestEdgeAudio(unittest.TestCase):
         try:
             host, port = cast(tuple[str, int], server.server_address)
             payload = build_edge_audio_payload(
-                b"edge-audio", device_id="esp32-edge", correlation_id="cid-loop"
+                b"quelle heure est il", device_id="esp32-edge", correlation_id="cid-loop"
             )
             response = send_edge_audio_payload(payload, base_url=f"http://{host}:{port}")
             self.assertIsNotNone(response)
@@ -87,6 +90,9 @@ class TestEdgeAudio(unittest.TestCase):
                 return
             self.assertEqual(response.get("status"), "accepted")
             self.assertEqual(response.get("correlation_id"), "cid-loop")
+            self.assertEqual(response.get("intent"), "time")
+            self.assertEqual(response.get("source"), "local")
+            self.assertIn("Il est", str(response.get("answer")))
         finally:
             server.shutdown()
             server.server_close()
@@ -141,6 +147,22 @@ class TestEdgeAudio(unittest.TestCase):
             retry_backoff_seconds=0.0,
         )
         self.assertIsNone(response)
+
+    def test_backend_rejects_non_utf8_audio(self) -> None:
+        payload = EdgeAudioPayload(
+            correlation_id="cid-bad",
+            device_id="esp32-01",
+            timestamp_ms=123,
+            sample_rate_hz=16000,
+            channels=1,
+            encoding="pcm16le",
+            audio_base64="//4=",
+        )
+        status, response = handle_edge_audio_request(json.dumps(payload.to_dict()).encode("utf-8"))
+
+        self.assertEqual(status, 400)
+        self.assertEqual(response["status"], "error")
+        self.assertEqual(response["reason"], "invalid_audio_utf8")
 
 
 if __name__ == "__main__":

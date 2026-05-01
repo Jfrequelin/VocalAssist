@@ -12,6 +12,11 @@ name = "main"
 path = "examples/main.rs"
 required-features = ["std"]
 
+[[example]]
+name = "edge_client"
+path = "examples/edge_client.rs"
+required-features = ["std"]
+
 [dependencies]
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 cortex-m-rt = { version = "0.7", optional = true }
@@ -21,11 +26,12 @@ embedded-hal = "1.0"
 stm32l4xx-hal = { version = "0.7", optional = true, features = ["stm32l476"] }
 
 # Utilities
+base64 = { version = "0.22", optional = true }
 heapless = "0.8"
 
 [features]
 default = ["std"]
-std = []
+std = ["dep:base64"]
 cortex-m-runtime = ["cortex-m-rt"]
 stm32l4 = ["stm32l4xx-hal"]
 
