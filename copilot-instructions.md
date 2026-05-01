@@ -39,6 +39,13 @@ Ces instructions guident GitHub Copilot pour ce repository.
 - Ajouter des types sur les fonctions publiques et des noms explicites.
 - Eviter les changements de style non necessaires hors du scope.
 
+## Contrainte Firmware STM32 (RUST UNIQUEMENT)
+
+- Le langage firmware STM32 autorise dans ce repository est Rust uniquement.
+- Interdit: ajouter ou maintenir du firmware dans un autre langage sous `src/base/firmware/`.
+- Toute nouvelle fonctionnalite firmware doit cibler `src/base/firmware/stm32-rust/`.
+- Le build/reference firmware doit utiliser Cargo et les docs Rust associees.
+
 ## Regles metier assistant vocal
 
 - Separer clairement le parsing d'intentions de la couche interface.
@@ -238,8 +245,8 @@ Quand choisir une dépendance:
 - **Audio Processing**: SciPy, NumPy (BSD)
 
 #### Firmware Embedded
-- **Language**: Rust (MIT/Apache 2.0) - au lieu de C propriétaire
-- **Build**: Cargo, CMake (MIT/BSD)
+- **Language**: Rust (MIT/Apache 2.0) - langage firmware unique du projet
+- **Build**: Cargo (MIT/Apache)
 - **RTOS**: FreeRTOS (MIT) si besoin
 - **HAL**: stm32l4xx-hal, stm32h7xx-hal (MIT/Apache)
 - **Libraries**: cortex-m, embedded-hal ecosystem

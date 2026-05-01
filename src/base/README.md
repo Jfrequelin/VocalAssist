@@ -12,7 +12,6 @@ Ce dossier regroupera le code execute sur la base edge ESP32-S3.
 - Source PDF DAC: https://files.waveshare.com/wiki/common/TexasInstruments-PCM5101PWR.pdf
 - Index global datasheets composants: [src/base/COMPONENT_DATASHEETS_INDEX.md](src/base/COMPONENT_DATASHEETS_INDEX.md)
 - Architecture logicielle base edge: [src/base/SOFTWARE_ARCHITECTURE.md](src/base/SOFTWARE_ARCHITECTURE.md)
-- Build STM32 (cross-compile): [src/base/STM32_BUILD.md](src/base/STM32_BUILD.md)
 - Build STM32 Rust: [src/base/RUST_STM32_BUILD.md](src/base/RUST_STM32_BUILD.md)
 
 Synthese d'impact immediate issue du datasheet v1.6:
@@ -101,18 +100,16 @@ Fournir une base edge robuste qui:
 
 ## Cible embarquee STM32
 
-### Option C (legacy)
-- `src/base/firmware/stm32/include/base_runtime.h`: API C portable du coeur runtime
-- `src/base/firmware/stm32/src/base_runtime.c`: implementation C sans dependance OS
-- `src/base/firmware/stm32/CMakeLists.txt`: build CMake (host + stm32)
-- `src/base/firmware/stm32/cmake/toolchain-stm32-gcc.cmake`: toolchain ARM GCC
-
-### Option Rust (recommandée)
+### Firmware Rust (obligatoire)
 - `src/base/firmware/stm32-rust/src/lib.rs`: runtime portable + couverture tests
 - `src/base/firmware/stm32-rust/examples/main.rs`: exemple d'utilisation
 - `src/base/firmware/stm32-rust/Cargo.toml`: configuration Cargo (host + cross-compile)
 - `src/base/firmware/stm32-rust/tests/`: tests d'intégration
 - Avantages: sécurité mémoire, gestion automatique ressources, zéro overhead runtime
+
+Contraintes de langage firmware:
+- Le firmware STM32 est maintenu uniquement en Rust.
+- Aucun nouveau code firmware dans un autre langage n'est autorisé.
 
 ## Structure de code cible (prochaine etape hardware)
 

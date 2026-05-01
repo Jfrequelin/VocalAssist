@@ -399,7 +399,6 @@ MACRO-013 (Pipeline Complet)
 
 - **Hardware**: [Waveshare ESP32-S3 1.85 Round LCD](https://www.amazon.fr/dp/B0F18D8S27)
 - **Firmware Rust**: `src/base/firmware/stm32-rust/`
-- **Firmware C Legacy**: `src/base/firmware/stm32/`
 - **Python Architecture**: `src/assistant/` et `src/base/`
 - **Tests**: `tests/` pour patterns de test
 
