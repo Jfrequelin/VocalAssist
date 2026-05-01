@@ -1,0 +1,13 @@
+# .cargo/config.toml for cross-compilation STM32
+#
+# Note: Cette config ne s'applique que lors d'un build explicite avec --target.
+# Pour les tests sur hote, utiliser: cargo test --lib --features std
+# Pour cross-compile: cargo build --release --target thumbv7em-none-eabihf
+
+[target.thumbv7em-none-eabihf]
+runner = "arm-none-eabi-gdb"
+rustflags = [
+    "-C", "link-arg=-Tlink.x",
+    "-C", "link-arg=-nostartfiles",
+    "-C", "opt-level=z",
+]

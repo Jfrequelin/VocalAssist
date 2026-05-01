@@ -1,0 +1,36 @@
+[package]
+name = "edge-base-stm32"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "edge_base"
+crate-type = ["rlib"]
+
+[[example]]
+name = "main"
+path = "examples/main.rs"
+required-features = ["std"]
+
+[dependencies]
+cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
+cortex-m-rt = { version = "0.7", optional = true }
+embedded-hal = "1.0"
+
+# Optional: for actual STM32 HAL support
+stm32l4xx-hal = { version = "0.7", optional = true, features = ["stm32l476"] }
+
+# Utilities
+heapless = "0.8"
+
+[features]
+default = ["std"]
+std = []
+cortex-m-runtime = ["cortex-m-rt"]
+stm32l4 = ["stm32l4xx-hal"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

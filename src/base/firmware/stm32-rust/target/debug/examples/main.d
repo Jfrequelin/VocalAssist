@@ -1,0 +1,1 @@
+/home/rlv/Work/projects/AssistantVocal/src/base/firmware/stm32-rust/target/debug/examples/main: /home/rlv/Work/projects/AssistantVocal/src/base/firmware/stm32-rust/examples/main.rs /home/rlv/Work/projects/AssistantVocal/src/base/firmware/stm32-rust/src/lib.rs
