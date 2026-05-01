@@ -54,17 +54,17 @@ class MacroIssueMapping(TypedDict):
 
 class GitHubTicketSync:
     """Synchronise les tickets GitHub vers des fichiers markdown locaux."""
-    
+
     GITHUB_API = "https://api.github.com"
     ISSUE_KINDS = ["macro", "task", "subticket", "atomic-task", "other"]
-    
+
     def __init__(self, owner: str, repo: str, token: Optional[str] = None):
         self.owner = owner
         self.repo = repo
         self.token = token or os.getenv("GITHUB_TOKEN") or self._load_gh_token()
         self.output_dir = Path("doc/tickets")
         self.headers = self._build_headers()
-        
+
         if not self.token:
             print("⚠️  Avertissement: aucun token GitHub detecte. Limite a 60 req/h (au lieu de 5000).")
 
@@ -82,19 +82,19 @@ class GitHubTicketSync:
 
         token = result.stdout.strip()
         return token or None
-    
+
     def _build_headers(self) -> Dict[str, str]:
         """Construit les headers pour l'API GitHub."""
         headers = {"Accept": "application/vnd.github.v3+json"}
         if self.token:
             headers["Authorization"] = f"token {self.token}"
         return headers
-    
+
     def _get(self, endpoint: str, params: Optional[QueryParams] = None) -> List[IssueData]:
         """Effectue une requête GET à l'API GitHub."""
         all_results: List[IssueData] = []
         page = 1
-        
+
         while True:
             query_params: QueryParams = dict(params or {})
             query_params["page"] = page
@@ -110,19 +110,19 @@ class GitHubTicketSync:
             data = cast(List[IssueData], json.loads(response_body))
             if not data:
                 break
-            
+
             all_results.extend(data)
             page += 1
-        
+
         return all_results
-    
+
     def _format_ticket_markdown(self, issue: IssueData) -> str:
         """Formate une issue GitHub en markdown."""
         template = f"""# [{issue['number']}] {issue['title']}
 
-**État**: {issue['state']}  
-**Créé**: {issue['created_at']}  
-**Mis à jour**: {issue['updated_at']}  
+**État**: {issue['state']}
+**Créé**: {issue['created_at']}
+**Mis à jour**: {issue['updated_at']}
 **Assigné à**: {issue['assignee']['login'] if issue['assignee'] else 'Non assigné'}
 
 ## Labels
@@ -155,44 +155,44 @@ class GitHubTicketSync:
 *Ne pas modifier manuellement (changements perdus à la prochaine sync)*
 """
         return template.strip()
-    
+
     def sync(self, state: str = "open", labels: Optional[List[str]] = None) -> Dict[str, int]:
         """Synchronise les tickets vers le dossier local."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Construire les paramètres de requête
         params: QueryParams = {"state": state}
         if labels:
             params["labels"] = ",".join(labels)
-        
+
         print(f"📡 Récupération des tickets: state={state}, labels={labels or 'tous'}")
         issues = self._get("issues", params)
-        
+
         print(f"✅ {len(issues)} ticket(s) trouvé(s)")
-        
+
         # Créer les fichiers de tickets
         created_count = 0
         updated_count = 0
-        
+
         for issue in issues:
             filename = f"{issue['number']:04d}-{issue['title'][:50].replace('/', '-').replace(' ', '_')}.md"
             filepath = self.output_dir / filename
-            
+
             content = self._format_ticket_markdown(issue)
-            
+
             if filepath.exists():
                 updated_count += 1
                 print(f"  ♻️  #{issue['number']} - {issue['title'][:50]}")
             else:
                 created_count += 1
                 print(f"  ✨ #{issue['number']} - {issue['title'][:50]}")
-            
+
             filepath.write_text(content, encoding="utf-8")
-        
+
         # Créer un index
         index_content = self._generate_index(issues)
         (self.output_dir / "INDEX.md").write_text(index_content, encoding="utf-8")
-        
+
         # Créer un manifeste
         mapping = self.build_macro_issue_mapping(issues)
         (self.output_dir / "macro_issue_mapping.json").write_text(
@@ -219,7 +219,7 @@ class GitHubTicketSync:
             json.dumps(manifest, indent=2),
             encoding="utf-8"
         )
-        
+
         return {
             "created": created_count,
             "updated": updated_count,
@@ -349,17 +349,17 @@ class GitHubTicketSync:
             lines.append(", ".join(f"#{number}" for number in mapping["unmatched_issues"]))
 
         return "\n".join(lines).strip() + "\n"
-    
+
     def _generate_index(self, issues: List[IssueData]) -> str:
         """Génère un index markdown des tickets."""
         # Trier par statut et numéro
         open_issues = sorted([i for i in issues if i['state'] == 'open'], key=lambda x: x['number'])
         closed_issues = sorted([i for i in issues if i['state'] == 'closed'], key=lambda x: x['number'])
-        
+
         index = f"""# Index des Tickets
 
-**Synchronisé**: {datetime.now().isoformat()}  
-**Total**: {len(issues)} ticket(s)  
+**Synchronisé**: {datetime.now().isoformat()}
+**Total**: {len(issues)} ticket(s)
 **Ouvert**: {len(open_issues)} | **Fermé**: {len(closed_issues)}
 
 ---
@@ -370,12 +370,12 @@ class GitHubTicketSync:
         for issue in open_issues:
             labels_str = ' '.join([f"`{label['name']}`" for label in issue['labels']]) if issue['labels'] else ''
             index += f"- **[#{issue['number']}]({issue['number']:04d}-*.md)** {issue['title']} {labels_str}\n"
-        
+
         index += f"\n## 🔴 Fermés ({len(closed_issues)})\n\n"
         for issue in closed_issues:
             labels_str = ' '.join([f"`{label['name']}`" for label in issue['labels']]) if issue['labels'] else ''
             index += f"- **[#{issue['number']}]({issue['number']:04d}-*.md)** {issue['title']} {labels_str}\n"
-        
+
         return index
 
 
@@ -388,11 +388,11 @@ def main():
     parser.add_argument("--token", help="Token GitHub (défaut: GITHUB_TOKEN env var)")
     parser.add_argument("--state", default="open", choices=["open", "closed", "all"], help="État des tickets")
     parser.add_argument("--label", action="append", dest="labels", help="Filtrer par label (répétable)")
-    
+
     args = parser.parse_args()
-    
+
     sync = GitHubTicketSync(args.owner, args.repo, args.token)
-    
+
     try:
         results = sync.sync(state=args.state, labels=args.labels)
         print("\n✅ Synchronisation terminée!")
@@ -403,7 +403,7 @@ def main():
     except (HTTPError, URLError) as e:
         print(f"❌ Erreur API GitHub: {e}")
         return 1
-    
+
     return 0
 
 

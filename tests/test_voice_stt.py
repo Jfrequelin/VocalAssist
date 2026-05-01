@@ -171,13 +171,13 @@ class TestFasterWhisperSpeechToText(unittest.TestCase):
         """FasterWhisperSpeechToText is set to French language."""
         stt_fr = FasterWhisperSpeechToText(language="fr")
         self.assertEqual(stt_fr.language, "fr")
-        
+
         stt_en = FasterWhisperSpeechToText(language="en")
         self.assertEqual(stt_en.language, "en")
 
     def test_faster_whisper_segments_concatenation(self):
         """FasterWhisperSpeechToText would concatenate segments with spaces.
-        
+
         Test verifies the implementation contract when model is used.
         """
         stt = FasterWhisperSpeechToText(model_size="tiny", language="fr")
@@ -187,7 +187,7 @@ class TestFasterWhisperSpeechToText(unittest.TestCase):
 
     def test_faster_whisper_empty_segments_filtered(self):
         """FasterWhisperSpeechToText implementation filters empty segments.
-        
+
         Test verifies the contract: implementation will filter empty segments.
         """
         stt = FasterWhisperSpeechToText(model_size="tiny", language="fr")
@@ -204,11 +204,11 @@ class TestSTTIntegration(unittest.TestCase):
         """Mock and real STT engines share compatible interfaces."""
         mock_stt = MockSpeechToText()
         real_stt = FasterWhisperSpeechToText()
-        
+
         # Both should have transcribe method
         self.assertTrue(hasattr(mock_stt, "transcribe"))
         self.assertTrue(hasattr(real_stt, "transcribe"))
-        
+
         # Both should be callable
         self.assertTrue(callable(mock_stt.transcribe))
         self.assertTrue(callable(real_stt.transcribe))
@@ -219,7 +219,7 @@ class TestSTTIntegration(unittest.TestCase):
             MockSpeechToText(),
             FasterWhisperSpeechToText(),
         ]
-        
+
         for engine in engines:
             result = engine.transcribe("test")
             self.assertIsInstance(result, str)
@@ -228,9 +228,9 @@ class TestSTTIntegration(unittest.TestCase):
         """MockSpeechToText is deterministic."""
         stt = MockSpeechToText()
         input_text = "quelle heure"
-        
+
         results = [stt.transcribe(input_text) for _ in range(5)]
-        
+
         # All results should be identical
         self.assertTrue(all(r == results[0] for r in results))
 
@@ -247,7 +247,7 @@ class TestSTTFrenchLanguage(unittest.TestCase):
         """FasterWhisperSpeechToText language is configurable."""
         stt_fr = FasterWhisperSpeechToText(language="fr")
         stt_en = FasterWhisperSpeechToText(language="en")
-        
+
         self.assertEqual(stt_fr.language, "fr")
         self.assertEqual(stt_en.language, "en")
 

@@ -18,7 +18,7 @@ class TestDateParseResult(unittest.TestCase):
         """Test creating a parse result with datetime."""
         dt = datetime(2026, 5, 15, 14, 30)
         result = DateParseResult(datetime_value=dt, confidence=1.0)
-        
+
         self.assertEqual(result.datetime_value, dt)
         self.assertEqual(result.confidence, 1.0)
         self.assertTrue(result.is_valid())
@@ -27,14 +27,14 @@ class TestDateParseResult(unittest.TestCase):
         """Test parse result with date but no time."""
         d = date(2026, 5, 15)
         result = DateParseResult(date_value=d, confidence=0.95)
-        
+
         self.assertEqual(result.date_value, d)
         self.assertTrue(result.is_valid())
 
     def test_parse_result_invalid(self) -> None:
         """Test invalid parse result."""
         result = DateParseResult(confidence=0.0)
-        
+
         self.assertFalse(result.is_valid())
 
     def test_parse_result_with_text(self) -> None:
@@ -44,7 +44,7 @@ class TestDateParseResult(unittest.TestCase):
             original_text="demain à 14h30",
             confidence=0.9
         )
-        
+
         self.assertEqual(result.original_text, "demain à 14h30")
 
 
@@ -134,7 +134,7 @@ class TestDateParser(unittest.TestCase):
     def test_parse_invalid_date(self) -> None:
         """Test parsing invalid date returns None or invalid result."""
         result = self.parser.parse("xxxxx date invalide")
-        
+
         # Should return None or invalid result
         if result is not None:
             self.assertFalse(result.is_valid())
@@ -177,7 +177,7 @@ class TestLocalAgenda(unittest.TestCase):
             title="Meeting",
             datetime=datetime(2026, 5, 1, 14, 0)
         )
-        
+
         self.assertEqual(event["title"], "Meeting")
         self.assertIsNotNone(event["id"])
         self.assertEqual(event["datetime"], datetime(2026, 5, 1, 14, 0))
@@ -188,9 +188,9 @@ class TestLocalAgenda(unittest.TestCase):
             title="Appointment",
             datetime=datetime(2026, 5, 5, 15, 30)
         )
-        
+
         self.agenda.add_event(event)
-        
+
         retrieved = self.agenda.get_event(event["id"])
         assert retrieved is not None
         self.assertEqual(retrieved["title"], "Appointment")
@@ -198,7 +198,7 @@ class TestLocalAgenda(unittest.TestCase):
     def test_list_events_for_date(self) -> None:
         """Test listing events for a specific date."""
         d = date(2026, 5, 1)
-        
+
         event1 = self.agenda.create_event(
             title="Morning meeting",
             datetime=datetime(2026, 5, 1, 9, 0)
@@ -211,11 +211,11 @@ class TestLocalAgenda(unittest.TestCase):
             title="Next day",
             datetime=datetime(2026, 5, 2, 10, 0)
         )
-        
+
         self.agenda.add_event(event1)
         self.agenda.add_event(event2)
         self.agenda.add_event(event3)
-        
+
         day_events = self.agenda.get_events_for_date(d)
         self.assertEqual(len(day_events), 2)
 
@@ -233,11 +233,11 @@ class TestLocalAgenda(unittest.TestCase):
             title="Next week",
             datetime=datetime(2026, 5, 11, 10, 0)
         )
-        
+
         self.agenda.add_event(event1)
         self.agenda.add_event(event2)
         self.agenda.add_event(event3)
-        
+
         week_events = self.agenda.get_events_for_week(date(2026, 5, 4))
         self.assertEqual(len(week_events), 2)
 
@@ -248,7 +248,7 @@ class TestLocalAgenda(unittest.TestCase):
             datetime=datetime(2026, 5, 1, 12, 0),
             description="Celebrating Q2 launch"
         )
-        
+
         self.assertEqual(event["description"], "Celebrating Q2 launch")
 
     def test_event_with_location(self) -> None:
@@ -258,7 +258,7 @@ class TestLocalAgenda(unittest.TestCase):
             datetime=datetime(2026, 5, 15, 9, 0),
             location="Paris Convention Center"
         )
-        
+
         self.assertEqual(event["location"], "Paris Convention Center")
 
     def test_delete_event(self) -> None:
@@ -268,9 +268,9 @@ class TestLocalAgenda(unittest.TestCase):
             datetime=datetime(2026, 5, 1, 10, 0)
         )
         self.agenda.add_event(event)
-        
+
         self.agenda.delete_event(event["id"])
-        
+
         retrieved = self.agenda.get_event(event["id"])
         self.assertIsNone(retrieved)
 
@@ -281,10 +281,10 @@ class TestLocalAgenda(unittest.TestCase):
             datetime=datetime(2026, 5, 1, 10, 0)
         )
         self.agenda.add_event(event)
-        
+
         event["title"] = "Updated title"
         self.agenda.update_event(event)
-        
+
         retrieved = self.agenda.get_event(event["id"])
         assert retrieved is not None
         self.assertEqual(retrieved["title"], "Updated title")
@@ -299,10 +299,10 @@ class TestLocalAgenda(unittest.TestCase):
             title="Team meeting",
             datetime=datetime(2026, 5, 1, 14, 0)
         )
-        
+
         self.agenda.add_event(event1)
         self.agenda.add_event(event2)
-        
+
         results = self.agenda.search_events("Python")
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["title"], "Python workshop")
@@ -310,12 +310,12 @@ class TestLocalAgenda(unittest.TestCase):
     def test_upcoming_events(self) -> None:
         """Test listing upcoming events."""
         agenda = LocalAgenda()
-        
+
         # Create events: 1 in next week, 1 in next 2 months, 1 in the past
         in_week = datetime.now() + timedelta(days=3)
         in_two_months = datetime.now() + timedelta(days=60)
         in_past = datetime.now() - timedelta(days=10)
-        
+
         event1 = agenda.create_event(
             title="This week",
             datetime=in_week
@@ -328,11 +328,11 @@ class TestLocalAgenda(unittest.TestCase):
             title="Past event",
             datetime=in_past
         )
-        
+
         agenda.add_event(event1)
         agenda.add_event(event2)
         agenda.add_event(event3)
-        
+
         # Get upcoming events for next 30 days
         upcoming = agenda.get_upcoming_events(days=30)
         # Should have only the "This week" event (within 30 days)

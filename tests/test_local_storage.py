@@ -18,7 +18,7 @@ class TestLocalReminder(unittest.TestCase):
     def test_create_reminder_with_title(self) -> None:
         """Test creating a reminder with just a title."""
         reminder = LocalReminder(title="Doctor appointment")
-        
+
         self.assertEqual(reminder.title, "Doctor appointment")
         self.assertIsNotNone(reminder.id)
         self.assertIsNotNone(reminder.created_at)
@@ -27,7 +27,7 @@ class TestLocalReminder(unittest.TestCase):
         """Test reminder with due date."""
         due_date = datetime.now() + timedelta(days=1)
         reminder = LocalReminder(title="Meeting", due_date=due_date)
-        
+
         self.assertEqual(reminder.due_date, due_date)
         self.assertFalse(reminder.completed)
 
@@ -35,20 +35,20 @@ class TestLocalReminder(unittest.TestCase):
         """Test marking reminder as completed."""
         reminder = LocalReminder(title="Task")
         self.assertFalse(reminder.completed)
-        
+
         reminder.completed = True
         self.assertTrue(reminder.completed)
 
     def test_reminder_with_priority(self) -> None:
         """Test reminder with priority level."""
         reminder = LocalReminder(title="Urgent", priority="high")
-        
+
         self.assertEqual(reminder.priority, "high")
 
     def test_reminder_priority_values(self) -> None:
         """Test valid priority values."""
         valid_priorities: list[Literal["low", "medium", "high"]] = ["low", "medium", "high"]
-        
+
         for priority in valid_priorities:
             reminder = LocalReminder(title="Test", priority=priority)
             self.assertEqual(reminder.priority, priority)
@@ -60,7 +60,7 @@ class TestLocalNote(unittest.TestCase):
     def test_create_simple_note(self) -> None:
         """Test creating a simple note."""
         note = LocalNote(title="Meeting notes", content="Discussed Q2 goals")
-        
+
         self.assertEqual(note.title, "Meeting notes")
         self.assertEqual(note.content, "Discussed Q2 goals")
         self.assertIsNotNone(note.id)
@@ -72,17 +72,17 @@ class TestLocalNote(unittest.TestCase):
             content="Completed phase 1",
             tags=["project", "update", "phase1"]
         )
-        
+
         self.assertEqual(len(note.tags), 3)
         self.assertIn("project", note.tags)
 
     def test_note_modification_timestamp(self) -> None:
         """Test that modification timestamp updates."""
         note = LocalNote(title="Test", content="Original")
-        
+
         # Modify content
         note.content = "Updated"
-        
+
         # Modification time should be updated (in real impl)
         self.assertIsNotNone(note.modified_at)
 
@@ -90,7 +90,7 @@ class TestLocalNote(unittest.TestCase):
         """Test archiving notes."""
         note = LocalNote(title="Old note", content="Archived")
         self.assertFalse(note.archived)
-        
+
         note.archived = True
         self.assertTrue(note.archived)
 
@@ -105,7 +105,7 @@ class TestReminderStore(unittest.TestCase):
         """Test adding and retrieving reminders."""
         reminder = LocalReminder(title="Buy milk")
         self.store.add_reminder(reminder)
-        
+
         retrieved = self.store.get_reminder(reminder.id)
         self.assertIsNotNone(retrieved)
         assert retrieved is not None
@@ -115,10 +115,10 @@ class TestReminderStore(unittest.TestCase):
         """Test listing all reminders."""
         reminder1 = LocalReminder(title="Task 1")
         reminder2 = LocalReminder(title="Task 2")
-        
+
         self.store.add_reminder(reminder1)
         self.store.add_reminder(reminder2)
-        
+
         all_reminders = self.store.list_reminders()
         self.assertEqual(len(all_reminders), 2)
 
@@ -126,12 +126,12 @@ class TestReminderStore(unittest.TestCase):
         """Test filtering reminders by completion status."""
         reminder1 = LocalReminder(title="Done")
         reminder1.completed = True
-        
+
         reminder2 = LocalReminder(title="Pending")
-        
+
         self.store.add_reminder(reminder1)
         self.store.add_reminder(reminder2)
-        
+
         pending = self.store.list_reminders(completed=False)
         self.assertEqual(len(pending), 1)
         self.assertEqual(pending[0].title, "Pending")
@@ -140,11 +140,11 @@ class TestReminderStore(unittest.TestCase):
         """Test updating an existing reminder."""
         reminder = LocalReminder(title="Original")
         self.store.add_reminder(reminder)
-        
+
         # Update reminder
         reminder.title = "Updated"
         self.store.update_reminder(reminder)
-        
+
         retrieved = self.store.get_reminder(reminder.id)
         assert retrieved is not None
         self.assertEqual(retrieved.title, "Updated")
@@ -153,31 +153,31 @@ class TestReminderStore(unittest.TestCase):
         """Test deleting a reminder."""
         reminder = LocalReminder(title="To delete")
         self.store.add_reminder(reminder)
-        
+
         self.store.delete_reminder(reminder.id)
-        
+
         retrieved = self.store.get_reminder(reminder.id)
         self.assertIsNone(retrieved)
 
     def test_reminder_due_soon(self) -> None:
         """Test filtering reminders due soon."""
         now = datetime.now()
-        
+
         # Due in 1 hour
         soon = LocalReminder(
             title="Soon",
             due_date=now + timedelta(hours=1)
         )
-        
+
         # Due in 5 days
         later = LocalReminder(
             title="Later",
             due_date=now + timedelta(days=5)
         )
-        
+
         self.store.add_reminder(soon)
         self.store.add_reminder(later)
-        
+
         due_soon = self.store.list_reminders_due_soon(hours=2)
         self.assertEqual(len(due_soon), 1)
         self.assertEqual(due_soon[0].title, "Soon")
@@ -194,7 +194,7 @@ class TestNoteStore(unittest.TestCase):
         """Test adding and retrieving notes."""
         note = LocalNote(title="Shopping list", content="Milk, bread, eggs")
         self.store.add_note(note)
-        
+
         retrieved = self.store.get_note(note.id)
         self.assertIsNotNone(retrieved)
         assert retrieved is not None
@@ -204,10 +204,10 @@ class TestNoteStore(unittest.TestCase):
         """Test searching notes by title keyword."""
         note1 = LocalNote(title="Python tips", content="...")
         note2 = LocalNote(title="JavaScript tips", content="...")
-        
+
         self.store.add_note(note1)
         self.store.add_note(note2)
-        
+
         results = self.store.search_notes("Python")
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].title, "Python tips")
@@ -216,10 +216,10 @@ class TestNoteStore(unittest.TestCase):
         """Test searching notes by tag."""
         note1 = LocalNote(title="Note 1", content="...", tags=["work", "urgent"])
         note2 = LocalNote(title="Note 2", content="...", tags=["personal"])
-        
+
         self.store.add_note(note1)
         self.store.add_note(note2)
-        
+
         work_notes = self.store.search_by_tag("work")
         self.assertEqual(len(work_notes), 1)
 
@@ -228,10 +228,10 @@ class TestNoteStore(unittest.TestCase):
         note1 = LocalNote(title="Active", content="...")
         note2 = LocalNote(title="Archived", content="...")
         note2.archived = True
-        
+
         self.store.add_note(note1)
         self.store.add_note(note2)
-        
+
         active = self.store.list_notes(exclude_archived=True)
         self.assertEqual(len(active), 1)
         self.assertEqual(active[0].title, "Active")
@@ -240,9 +240,9 @@ class TestNoteStore(unittest.TestCase):
         """Test deleting a note."""
         note = LocalNote(title="Temporary", content="...")
         self.store.add_note(note)
-        
+
         self.store.delete_note(note.id)
-        
+
         retrieved = self.store.get_note(note.id)
         self.assertIsNone(retrieved)
 

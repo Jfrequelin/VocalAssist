@@ -124,13 +124,13 @@ class TestPiperTextToSpeech(unittest.TestCase):
     def test_piper_synthesize_returns_string(self, mock_which: Any):
         """PiperTextToSpeech.synthesize returns string (path or text)."""
         mock_which.return_value = "/usr/bin/piper"
-        
+
         # Create a fake model file in the temp directory
         model_file = Path(self.temp_dir) / "model.onnx"
         model_file.touch()
-        
+
         tts = PiperTextToSpeech(model_path=str(model_file), output_dir=self.temp_dir)
-        
+
         with patch("subprocess.run") as mock_run:
             # Mock successful subprocess execution
             mock_run.return_value = MagicMock()
@@ -147,10 +147,10 @@ class TestPiperTextToSpeech(unittest.TestCase):
         """PiperTextToSpeech model path is configurable."""
         model1 = "/model1.onnx"
         model2 = "/model2.onnx"
-        
+
         tts1 = PiperTextToSpeech(model_path=model1)
         tts2 = PiperTextToSpeech(model_path=model2)
-        
+
         self.assertEqual(tts1.model_path, model1)
         self.assertEqual(tts2.model_path, model2)
 
@@ -158,7 +158,7 @@ class TestPiperTextToSpeech(unittest.TestCase):
         """PiperTextToSpeech would create output directory if needed."""
         new_output_dir = Path(self.temp_dir) / "new_audio_dir"
         self.assertFalse(new_output_dir.exists())
-        
+
         tts = PiperTextToSpeech(
             model_path="/model.onnx",
             output_dir=str(new_output_dir)
@@ -171,7 +171,7 @@ class TestPiperTextToSpeech(unittest.TestCase):
     def test_piper_missing_binary(self, mock_which: Any):
         """PiperTextToSpeech raises error if piper binary not found."""
         mock_which.return_value = None  # piper not in PATH
-        
+
         tts = PiperTextToSpeech(model_path="/model.onnx", output_dir=self.temp_dir)
         # Calling synthesize with piper missing should raise error
         # But first: just verify the setup is correct
@@ -181,13 +181,13 @@ class TestPiperTextToSpeech(unittest.TestCase):
     def test_piper_text_stripping(self, mock_which: Any):
         """PiperTextToSpeech strips whitespace from input."""
         mock_which.return_value = "/usr/bin/piper"
-        
+
         # Create fake model file
         model_file = Path(self.temp_dir) / "model.onnx"
         model_file.touch()
-        
+
         tts = PiperTextToSpeech(model_path=str(model_file), output_dir=self.temp_dir)
-        
+
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock()
             # Text with spaces should be stripped before processing
@@ -221,12 +221,12 @@ class TestTTSIntegration(unittest.TestCase):
         mock_tts = MockTextToSpeech()
         temp_dir = tempfile.mkdtemp()
         real_tts = PiperTextToSpeech(model_path="/model.onnx", output_dir=temp_dir)
-        
+
         try:
             # Both should have synthesize method
             self.assertTrue(hasattr(mock_tts, "synthesize"))
             self.assertTrue(hasattr(real_tts, "synthesize"))
-            
+
             # Both should be callable
             self.assertTrue(callable(mock_tts.synthesize))
             self.assertTrue(callable(real_tts.synthesize))
@@ -240,19 +240,19 @@ class TestTTSIntegration(unittest.TestCase):
         temp_dir = tempfile.mkdtemp()
         try:
             mock_which.return_value = "/usr/bin/piper"
-            
+
             # Create fake model file
             model_file = Path(temp_dir) / "model.onnx"
             model_file.touch()
-            
+
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock()
-                
+
                 engines: list[TextToSpeechEngine] = [
                     MockTextToSpeech(),
                     PiperTextToSpeech(model_path=str(model_file), output_dir=temp_dir),
                 ]
-                
+
                 for engine in engines:
                     result = engine.synthesize("test response")
                     self.assertIsInstance(result, str)
@@ -264,9 +264,9 @@ class TestTTSIntegration(unittest.TestCase):
         """MockTextToSpeech is deterministic."""
         tts = MockTextToSpeech()
         input_text = "reponse vocale"
-        
+
         results = [tts.synthesize(input_text) for _ in range(5)]
-        
+
         # All results should be identical
         self.assertTrue(all(r == results[0] for r in results))
 
@@ -281,7 +281,7 @@ class TestTTSFrenchSupport(unittest.TestCase):
             # French Piper model naming convention
             french_model = "/models/fr_FR-tom-medium.onnx"
             tts = PiperTextToSpeech(model_path=french_model, output_dir=temp_dir)
-            
+
             self.assertEqual(tts.model_path, french_model)
             self.assertIn("fr", french_model.lower())
         finally:
@@ -294,17 +294,17 @@ class TestTTSFrenchSupport(unittest.TestCase):
         temp_dir = tempfile.mkdtemp()
         try:
             mock_which.return_value = "/usr/bin/piper"
-            
+
             # Create fake model file
             model_file = Path(temp_dir) / "model.onnx"
             model_file.touch()
-            
+
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value = MagicMock()
                 tts = PiperTextToSpeech(model_path=str(model_file), output_dir=temp_dir)
                 french_text = "Bonjour, comment allez-vous? Écoute bien!"
                 result = tts.synthesize(french_text)
-                
+
                 # Should return a string (not throw on Unicode)
                 self.assertIsInstance(result, str)
         finally:
@@ -335,7 +335,7 @@ class TestTTSOutputManagement(unittest.TestCase):
         """TTS would generate consistent output paths."""
         # Multiple calls should generate different timestamps
         PiperTextToSpeech(model_path="/model.onnx", output_dir=self.temp_dir)
-        
+
         # Verify base directory exists
         output_dir = Path(self.temp_dir)
         self.assertTrue(str(output_dir).endswith(self.temp_dir))
@@ -345,7 +345,7 @@ class TestTTSOutputManagement(unittest.TestCase):
         # Verify the naming convention would use .wav
         output_dir = Path(self.temp_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Files should be named like tts-*.wav
         self.assertTrue(str(output_dir).endswith(self.temp_dir))
 

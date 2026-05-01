@@ -12,7 +12,7 @@ class TestValidateTicketPlan(unittest.TestCase):
             tests=["tests/test_voice_pipeline.py"],
             has_pyright=True,
             has_pylint=True,
-            pylint_disable=["missing-module-docstring"],
+            pylint_fail_under=9.0,
         )
 
         names = [step.name for step in plan]
@@ -27,7 +27,7 @@ class TestValidateTicketPlan(unittest.TestCase):
             tests=["tests/test_voice_pipeline.py"],
             has_pyright=False,
             has_pylint=True,
-            pylint_disable=["missing-module-docstring"],
+            pylint_fail_under=9.0,
         )
 
         names = [step.name for step in plan]
@@ -42,19 +42,19 @@ class TestValidateTicketPlan(unittest.TestCase):
             tests=[],
             has_pyright=True,
             has_pylint=True,
-            pylint_disable=["missing-module-docstring"],
+            pylint_fail_under=9.0,
         )
 
         tests_step = next(step for step in plan if step.name == "tests")
         self.assertEqual(tests_step.command, ["python3", "-m", "unittest"])
 
-    def test_build_plan_pylint_disable_list(self) -> None:
+    def test_build_plan_pylint_fail_under(self) -> None:
         plan = build_plan(
             files=["scripts/validate_ticket.py"],
             tests=["tests/test_validate_ticket.py"],
             has_pyright=False,
             has_pylint=True,
-            pylint_disable=["missing-module-docstring", "line-too-long"],
+            pylint_fail_under=9.0,
         )
 
         pylint_step = next(step for step in plan if step.name == "pylint")
@@ -64,7 +64,7 @@ class TestValidateTicketPlan(unittest.TestCase):
                 "python3",
                 "-m",
                 "pylint",
-                "--disable=missing-module-docstring,line-too-long",
+                "--fail-under=9",
                 "scripts/validate_ticket.py",
             ],
         )

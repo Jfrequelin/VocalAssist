@@ -11,7 +11,7 @@ from src.assistant.wake_word_handler import WakeWordHandler
 def run_prototype() -> None:
     handler = WakeWordHandler(wake_word="nova")
     session_manager = SessionManager(timeout_seconds=120)  # 2 minutes inactivité
-    
+
     print("=== Prototype assistant vocal (terminal) ===")
     print("Tapez vos commandes. Commencez par le mot cle 'nova'.")
     print("Exemple: nova quelle heure est-il")
@@ -57,7 +57,7 @@ def run_prototype() -> None:
             print(f"Assistant: {SystemMessages.LEON_UNAVAILABLE}")
 
         print(f"Assistant: {reply.answer}")
-        
+
         # Enregistrer l'activité pour étendre le timeout
         session_manager.record_activity(current_session.session_id)
 

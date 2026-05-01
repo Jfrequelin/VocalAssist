@@ -70,13 +70,19 @@ Le script suivant applique le workflow de traitement ticket:
 - py_compile
 - tests
 - passe Pylance (pyright si disponible)
-- passe pylint
+- passe pylint sans exemption de regles (score minimal par defaut: 9.0)
 
 ```bash
 # Exemple sur un ticket
 python3 scripts/validate_ticket.py \
   --files src/assistant/prototype_voice.py src/assistant/voice_pipeline.py \
   --tests tests/test_voice_pipeline.py tests/test_orchestrator.py
+
+# Changer explicitement le seuil minimal pylint
+python3 scripts/validate_ticket.py \
+  --files src/assistant/prototype_voice.py \
+  --tests tests/test_voice_pipeline.py \
+  --pylint-fail-under 9.0
 
 # Mode strict (echoue si pyright/pylint absents)
 python3 scripts/validate_ticket.py \

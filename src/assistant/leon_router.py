@@ -24,7 +24,7 @@ class RoutingStats(TypedDict):
 
 class LeonRoute(Enum):
     """Available routing destinations."""
-    
+
     LOCAL = "local"         # Process with local intents
     LEON = "leon"           # Send to Leon NLU
     CACHE = "cache"         # Use cached response
@@ -44,7 +44,7 @@ class LeonRoute(Enum):
 @dataclass
 class RoutingContext:
     """Decision context for routing."""
-    
+
     user_input: str
     detected_intent: str
     confidence: float
@@ -63,7 +63,7 @@ class RoutingContext:
 @dataclass
 class RoutingDecision:
     """Decision made by router."""
-    
+
     route: LeonRoute
     confidence: float
     reason: str
@@ -75,7 +75,7 @@ class RoutingDecision:
 
 class IntelligentRouter:
     """Intelligent router for Leon integration."""
-    
+
     def __init__(self) -> None:
         """Initialize the intelligent router."""
         self.stats: RoutingStats = {
@@ -84,7 +84,7 @@ class IntelligentRouter:
             "by_confidence": [],
         }
         self.cache: dict[str, tuple[datetime, RoutingDecision]] = {}
-        
+
         # Confidence thresholds
         self.local_threshold = 0.85
         self.cache_threshold = 0.75
@@ -92,24 +92,24 @@ class IntelligentRouter:
 
     def route(self, context: RoutingContext) -> RoutingDecision:
         """Route query to appropriate destination.
-        
+
         Args:
             context: Routing context with query information.
-            
+
         Returns:
             RoutingDecision with selected route and confidence.
         """
         self.stats["total_routed"] += 1
-        
+
         # Check offline mode
         if context.is_offline:
             return self._route_offline(context)
-        
+
         # Check cache first
         cached = self._check_cache(context)
         if cached:
             return cached
-        
+
         # User preference override
         if context.prefer_local and context.confidence > self.cache_threshold:
             return self._make_decision(
@@ -118,7 +118,7 @@ class IntelligentRouter:
                 reason="User preference for local processing",
                 context=context
             )
-        
+
         # High confidence local intents
         if context.confidence >= self.local_threshold:
             return self._make_decision(
@@ -127,7 +127,7 @@ class IntelligentRouter:
                 reason=f"High confidence local intent ({context.confidence:.2f})",
                 context=context
             )
-        
+
         # Check for cacheable patterns
         if context.confidence >= self.cache_threshold and self._is_cacheable(context):
             return self._make_decision(
@@ -137,7 +137,7 @@ class IntelligentRouter:
                 fallback_route=LeonRoute.LEON,
                 context=context
             )
-        
+
         # Medium confidence - try local first, fallback to Leon
         if context.confidence >= self.leon_threshold:
             return self._make_decision(
@@ -147,7 +147,7 @@ class IntelligentRouter:
                 fallback_route=LeonRoute.LEON,
                 context=context
             )
-        
+
         # Low confidence - use Leon
         return self._make_decision(
             route=LeonRoute.LEON,
@@ -159,10 +159,10 @@ class IntelligentRouter:
 
     def _route_offline(self, context: RoutingContext) -> RoutingDecision:
         """Route query when offline.
-        
+
         Args:
             context: Routing context.
-            
+
         Returns:
             RoutingDecision for offline routing.
         """
@@ -184,40 +184,40 @@ class IntelligentRouter:
 
     def _check_cache(self, context: RoutingContext) -> Optional[RoutingDecision]:
         """Check if similar query is cached.
-        
+
         Args:
             context: Routing context.
-            
+
         Returns:
             Cached decision if found, None otherwise.
         """
         # Simple cache key - could be enhanced with semantic similarity
         cache_key = f"{context.detected_intent}:{context.user_input[:50]}"
-        
+
         if cache_key in self.cache:
             cached_time, decision = self.cache[cache_key]
-            
+
             # Check cache expiry (1 hour)
             if datetime.now() - cached_time < timedelta(hours=1):
                 logger.debug(f"Cache hit for {cache_key}")
                 return decision
             else:
                 del self.cache[cache_key]
-        
+
         return None
 
     def _is_cacheable(self, context: RoutingContext) -> bool:
         """Determine if query response is cacheable.
-        
+
         Args:
             context: Routing context.
-            
+
         Returns:
             True if query should be cached.
         """
         # Cacheable intents: time, date, weather (non-location-specific), etc.
         cacheable_intents = ["time", "date", "reminder", "note", "greeting"]
-        
+
         return context.detected_intent in cacheable_intents
 
     def _make_decision(
@@ -229,14 +229,14 @@ class IntelligentRouter:
         context: Optional[RoutingContext] = None,
     ) -> RoutingDecision:
         """Create routing decision and update stats.
-        
+
         Args:
             route: Selected route.
             confidence: Decision confidence.
             reason: Reason for decision.
             fallback_route: Optional fallback route.
             context: Original routing context.
-            
+
         Returns:
             RoutingDecision.
         """
@@ -247,24 +247,24 @@ class IntelligentRouter:
             fallback_route=fallback_route,
             extracted_params=context.metadata if context else {}
         )
-        
+
         # Update statistics
         route_count = self.stats["by_route"].get(route.value, 0)
         self.stats["by_route"][route.value] = route_count + 1
         self.stats["by_confidence"].append(confidence)
-        
+
         # Cache if appropriate
         if context and route == LeonRoute.CACHE:
             cache_key = f"{context.detected_intent}:{context.user_input[:50]}"
             self.cache[cache_key] = (datetime.now(), decision)
-        
+
         logger.info(f"Routing decision: {route.value} (confidence: {confidence:.2f}) - {reason}")
-        
+
         return decision
 
     def get_routing_stats(self) -> dict[str, Any]:
         """Get routing statistics.
-        
+
         Returns:
             Dictionary with routing statistics.
         """
@@ -273,7 +273,7 @@ class IntelligentRouter:
             if self.stats["by_confidence"]
             else 0
         )
-        
+
         return {
             "total_routed": self.stats["total_routed"],
             "by_route": self.stats["by_route"],
@@ -288,7 +288,7 @@ class IntelligentRouter:
         leon_threshold: float = 0.4,
     ) -> None:
         """Configure confidence thresholds.
-        
+
         Args:
             local_threshold: Threshold for local routing.
             cache_threshold: Threshold for cache routing.
@@ -306,7 +306,7 @@ class IntelligentRouter:
 
 class ContextManager:
     """Manages routing context across turns."""
-    
+
     def __init__(self) -> None:
         """Initialize context manager."""
         self.context_history: list[RoutingContext] = []
@@ -314,21 +314,21 @@ class ContextManager:
 
     def add_context(self, context: RoutingContext) -> None:
         """Add context to history.
-        
+
         Args:
             context: New routing context.
         """
         self.context_history.append(context)
-        
+
         if len(self.context_history) > self.max_history:
             self.context_history = self.context_history[-self.max_history:]
 
     def get_previous_context(self, depth: int = 1) -> Optional[RoutingContext]:
         """Get previous context.
-        
+
         Args:
             depth: How many turns back (1 = immediate previous).
-            
+
         Returns:
             Previous context or None.
         """
@@ -338,7 +338,7 @@ class ContextManager:
 
     def get_conversation_context(self) -> list[RoutingContext]:
         """Get current conversation context.
-        
+
         Returns:
             List of contexts in current conversation.
         """

@@ -59,19 +59,19 @@ def extract_epic_info(epic_file: str) -> dict:
     if not path.exists():
         print(f"⚠️  File not found: {epic_file}")
         return {}
-    
+
     content = path.read_text(encoding="utf-8")
-    
+
     # Extract title, estimation, priority
     title_match = re.search(r"^# (🟨|🟩|🟧|🟣|🔴) Epic (.+)$", content, re.MULTILINE)
     title = title_match.group(2) if title_match else "Unknown"
-    
+
     estimation_match = re.search(r"\*\*Estimation\*\*:\s+(.+?\s+pt)", content)
     estimation = estimation_match.group(1) if estimation_match else "TBD"
-    
+
     priority_match = re.search(r"\*\*Priority\*\*:\s+(.+)", content)
     priority = priority_match.group(1) if priority_match else "Medium"
-    
+
     # Extract subtasks
     subtasks = []
     subtask_matches = re.finditer(r"^\*\*([A-Z]+-\d+)\*\*:\s+(.+)", content, re.MULTILINE)
@@ -80,15 +80,15 @@ def extract_epic_info(epic_file: str) -> dict:
             "id": match.group(1),
             "title": match.group(2),
         })
-    
+
     # Extract acceptance criteria
     acceptance_match = re.search(
-        r"## 🎯 Critères d'acceptation\n\n(.*?)\n\n##", 
-        content, 
+        r"## 🎯 Critères d'acceptation\n\n(.*?)\n\n##",
+        content,
         re.DOTALL
     )
     acceptance = acceptance_match.group(1) if acceptance_match else "TBD"
-    
+
     return {
         "title": title,
         "estimation": estimation,
@@ -122,9 +122,9 @@ def main():
     parser.add_argument("--epic", choices=list(EPICS.keys()), help="Specific epic")
     parser.add_argument("--all", action="store_true", help="All épics")
     parser.add_argument("--format", choices=["github", "markdown"], default="markdown", help="Output format")
-    
+
     args = parser.parse_args()
-    
+
     if args.all:
         epics_to_process = list(EPICS.keys())
     elif args.epic:
@@ -135,29 +135,29 @@ def main():
         for code, info in EPICS.items():
             print(f"  {code} → {info['file']}")
         return
-    
+
     for epic_code in epics_to_process:
         epic_info = EPICS[epic_code]
         data = extract_epic_info(epic_info["file"])
-        
+
         if not data:
             continue
-        
+
         print(f"\n{'=' * 60}")
         print(f"📋 {epic_code}: {data['title']}")
         print(f"{'=' * 60}")
         print(f"Estimation: {data['estimation']}")
         print(f"Priority: {data['priority']}")
         print(f"\nSubtasks: {len(data['subtasks'])}")
-        
+
         for subtask in data["subtasks"]:
             print(f"  ✓ {subtask['id']}: {subtask['title']}")
-        
+
         if args.format == "github":
             print(f"\n💡 GitHub Issue Template:\n")
             for subtask in data["subtasks"]:
                 print(format_github_issue(subtask, epic_code, data["title"]))
-        
+
         print(f"\n🔗 Full epic: {epic_info['file']}")
 
 

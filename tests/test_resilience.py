@@ -27,7 +27,7 @@ class TestRetryPolicy(unittest.TestCase):
             initial_delay=1,
             backoff_factor=2
         )
-        
+
         self.assertEqual(policy.max_retries, 3)
         self.assertEqual(policy.initial_delay, 1)
         self.assertEqual(policy.backoff_factor, 2)
@@ -40,15 +40,15 @@ class TestRetryPolicy(unittest.TestCase):
             backoff_factor=2,
             use_jitter=False  # Disable jitter for predictable testing
         )
-        
+
         # Attempt 1: 1 second
         delay1 = policy.get_delay(attempt=1)
         self.assertEqual(delay1, 1)
-        
+
         # Attempt 2: 2 seconds
         delay2 = policy.get_delay(attempt=2)
         self.assertEqual(delay2, 2)
-        
+
         # Attempt 3: 4 seconds
         delay3 = policy.get_delay(attempt=3)
         self.assertEqual(delay3, 4)
@@ -61,9 +61,9 @@ class TestRetryPolicy(unittest.TestCase):
             backoff_factor=2,
             use_jitter=True
         )
-        
+
         delays = [policy.get_delay(i) for i in range(1, 4)]
-        
+
         # All delays should be positive
         self.assertTrue(all(d > 0 for d in delays))
 
@@ -76,7 +76,7 @@ class TestRetryPolicy(unittest.TestCase):
             max_delay=10,
             use_jitter=False  # Disable jitter for predictable testing
         )
-        
+
         # Even with exponential growth, should be capped
         delay_high = policy.get_delay(attempt=8)
         self.assertLessEqual(delay_high, policy.max_delay)
@@ -84,11 +84,11 @@ class TestRetryPolicy(unittest.TestCase):
     def test_should_retry(self) -> None:
         """Test decision to retry."""
         policy = RetryPolicy(max_retries=3)
-        
+
         # First 2 attempts should retry (attempt < max_retries)
         self.assertTrue(policy.should_retry(attempt=1))
         self.assertTrue(policy.should_retry(attempt=2))
-        
+
         # 3rd attempt should not retry (attempt not < max_retries)
         self.assertFalse(policy.should_retry(attempt=3))
 
@@ -98,10 +98,10 @@ class TestRetryPolicy(unittest.TestCase):
             max_retries=3,
             retry_on=[ConnectionError, TimeoutError]
         )
-        
+
         # Should retry on ConnectionError
         self.assertTrue(policy.should_retry_on_error(ConnectionError("Connection failed")))
-        
+
         # Should not retry on ValueError
         self.assertFalse(policy.should_retry_on_error(ValueError("Invalid value")))
 
@@ -133,14 +133,14 @@ class TestCircuitBreaker(unittest.TestCase):
         """Test successful calls keep circuit closed."""
         self.breaker.call_succeeded()
         self.breaker.call_succeeded()
-        
+
         self.assertEqual(self.breaker.state, CircuitBreakerState.CLOSED)
 
     def test_failure_threshold_opens_circuit(self) -> None:
         """Test failures open circuit after threshold."""
         for _ in range(3):
             self.breaker.call_failed()
-        
+
         self.assertEqual(self.breaker.state, CircuitBreakerState.OPEN)
 
     def test_open_circuit_blocks_calls(self) -> None:
@@ -148,7 +148,7 @@ class TestCircuitBreaker(unittest.TestCase):
         # Open the circuit
         for _ in range(3):
             self.breaker.call_failed()
-        
+
         # Try to call with open circuit
         allowed = self.breaker.allow_call()
         self.assertFalse(allowed)
@@ -158,10 +158,10 @@ class TestCircuitBreaker(unittest.TestCase):
         # Open circuit
         for _ in range(3):
             self.breaker.call_failed()
-        
+
         # Force timeout to trigger half-open
         self.breaker.last_failure_time = datetime.now() - timedelta(seconds=5)
-        
+
         # Should now be half-open and allow call
         allowed = self.breaker.allow_call()
         self.assertTrue(allowed)
@@ -175,15 +175,15 @@ class TestCircuitBreaker(unittest.TestCase):
             recovery_timeout=2,
             success_threshold=1
         )
-        
+
         # Open circuit
         for _ in range(3):
             breaker.call_failed()
-        
+
         # Force to half-open
         breaker.last_failure_time = datetime.now() - timedelta(seconds=5)
         breaker.allow_call()
-        
+
         # Successful call should close circuit
         breaker.call_succeeded()
         self.assertEqual(breaker.state, CircuitBreakerState.CLOSED)
@@ -193,11 +193,11 @@ class TestCircuitBreaker(unittest.TestCase):
         # Open circuit
         for _ in range(3):
             self.breaker.call_failed()
-        
+
         # Force to half-open
         self.breaker.last_failure_time = datetime.now() - timedelta(seconds=5)
         self.breaker.allow_call()
-        
+
         # Failure should reopen
         self.breaker.call_failed()
         self.assertEqual(self.breaker.state, CircuitBreakerState.OPEN)
@@ -207,9 +207,9 @@ class TestCircuitBreaker(unittest.TestCase):
         self.breaker.call_succeeded()
         self.breaker.call_succeeded()
         self.breaker.call_failed()
-        
+
         metrics = self.breaker.get_metrics()
-        
+
         self.assertEqual(metrics["total_calls"], 3)
         self.assertEqual(metrics["success_count"], 2)
         self.assertEqual(metrics["failure_count"], 1)
@@ -219,9 +219,9 @@ class TestCircuitBreaker(unittest.TestCase):
         # Open circuit
         for _ in range(3):
             self.breaker.call_failed()
-        
+
         self.breaker.reset()
-        
+
         # Should be back to closed
         self.assertEqual(self.breaker.state, CircuitBreakerState.CLOSED)
         self.assertEqual(self.breaker.failure_count, 0)
@@ -236,52 +236,52 @@ class TestResilienceManager(unittest.TestCase):
     def test_register_circuit_breaker(self) -> None:
         """Test registering circuit breaker for service."""
         self.manager.register_breaker("leon_api", failure_threshold=5)
-        
+
         self.assertTrue(self.manager.has_breaker("leon_api"))
 
     def test_execute_with_resilience(self) -> None:
         """Test executing operation with resilience."""
         def successful_op() -> str:
             return "success"
-        
+
         result = self.manager.execute("test_service", successful_op)
-        
+
         self.assertEqual(result, "success")
 
     def test_retry_on_transient_failure(self) -> None:
         """Test retrying on transient failure."""
         call_count = [0]
-        
+
         def flaky_op() -> str:
             call_count[0] += 1
             if call_count[0] < 3:
                 raise ConnectionError("Transient failure")
             return "success"
-        
+
         retry_policy = RetryPolicy(max_retries=3)
         result = self.manager.execute_with_retry("flaky", flaky_op, retry_policy)
-        
+
         self.assertEqual(result, "success")
         self.assertEqual(call_count[0], 3)
 
     def test_circuit_breaker_protection(self) -> None:
         """Test circuit breaker protects against cascading failures."""
         self.manager.register_breaker("leon", failure_threshold=2)
-        
+
         def failing_op() -> str:
             raise Exception("Leon service down")
-        
+
         # First two calls fail and open breaker
         for _ in range(2):
             try:
                 self.manager.execute("leon", failing_op)
             except Exception:
                 pass
-        
+
         # Third call should be blocked (circuit open)
         with self.assertRaises(Exception) as ctx:
             self.manager.execute("leon", failing_op)
-        
+
         # Should get circuit open error, not the original error
         self.assertIn("Circuit", str(ctx.exception) or "open")
 
@@ -289,12 +289,12 @@ class TestResilienceManager(unittest.TestCase):
         """Test executing fallback on failure."""
         def primary_op() -> str:
             raise Exception("Primary failed")
-        
+
         def fallback_op() -> str:
             return "fallback_response"
-        
+
         result = self.manager.execute_with_fallback("service", primary_op, fallback_op)
-        
+
         self.assertEqual(result, "fallback_response")
 
     def test_timeout_handling(self) -> None:
@@ -302,7 +302,7 @@ class TestResilienceManager(unittest.TestCase):
         def slow_op() -> str:
             time.sleep(2)
             return "done"
-        
+
         # This test shows timeout behavior (actual timeout depends on OS/threading)
         # For now, test that the method exists and doesn't crash
         try:
@@ -322,21 +322,21 @@ class TestResilienceManager(unittest.TestCase):
                 self.manager.execute("test", lambda: "success")
             except Exception:
                 pass
-        
+
         stats = self.manager.get_resilience_stats()
-        
+
         self.assertIn("total_operations", stats)
         self.assertIn("breaker_states", stats)
 
     def test_adaptive_timeout(self) -> None:
         """Test adaptive timeout adjustment."""
         manager = ResilienceManager(adaptive_timeout=True)
-        
+
         # Record some execution times
         manager.record_execution_time("api", 0.1)
         manager.record_execution_time("api", 0.15)
         manager.record_execution_time("api", 0.12)
-        
+
         # Timeout should be based on average + margin
         timeout = manager.get_adaptive_timeout("api")
         self.assertGreater(timeout, 0.15)

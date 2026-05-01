@@ -20,7 +20,7 @@ class TestDefaultIntentRegistry(unittest.TestCase):
     def test_registry_has_all_core_intents(self) -> None:
         """Test that default registry has essential intents."""
         core_intents = ["time", "date", "light", "music", "weather", "temperature", "exit"]
-        
+
         for intent_id in core_intents:
             intent = self.registry.get(intent_id)
             self.assertIsNotNone(intent, f"Intent '{intent_id}' should be registered")
@@ -32,7 +32,7 @@ class TestDefaultIntentRegistry(unittest.TestCase):
         self.assertIn("slots", light)
         self.assertIn("room", light["slots"])
         self.assertIn("state", light["slots"])
-        
+
         # Verify slot types
         self.assertEqual(light["slots"]["room"].slot_type, SlotType.ENUM)
         self.assertEqual(light["slots"]["state"].slot_type, SlotType.ENUM)
@@ -57,7 +57,7 @@ class TestDefaultIntentRegistry(unittest.TestCase):
         """Test that music intent has action, genre, and volume slots."""
         music = self.registry.get("music")
         assert music is not None
-        
+
         for slot_name in ["action", "genre", "volume"]:
             self.assertIn(slot_name, music["slots"])
 
@@ -65,7 +65,7 @@ class TestDefaultIntentRegistry(unittest.TestCase):
         """Test that intents are ordered by priority."""
         ordered = self.registry.get_ordered()
         priorities = [data["priority"] for _, data in ordered]
-        
+
         # Should be in descending order
         for i in range(len(priorities) - 1):
             self.assertGreaterEqual(priorities[i], priorities[i + 1])
@@ -116,7 +116,7 @@ class TestSlotExtraction(unittest.TestCase):
         light_intent = self.registry.get("light")
         assert light_intent is not None
         room_slot = light_intent["slots"]["room"]
-        
+
         # Room slot should enumerate valid rooms
         self.assertIn("salon", room_slot.enum_values)
         self.assertIn("chambre", room_slot.enum_values)
@@ -128,7 +128,7 @@ class TestSlotExtraction(unittest.TestCase):
         temp_intent = self.registry.get("temperature")
         assert temp_intent is not None
         value_slot = temp_intent["slots"]["value"]
-        
+
         self.assertEqual(value_slot.min_value, 10)
         self.assertEqual(value_slot.max_value, 30)
 

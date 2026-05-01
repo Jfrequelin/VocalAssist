@@ -43,7 +43,7 @@ def _music_response(slots: dict[str, Any]) -> str:
     action = str(slots.get("action", "play"))
     if action == "stop":
         return "Simulation musique: lecture arretee."
-    
+
     details: list[str] = []
     if "genre" in slots:
         details.append(f"genre {slots['genre']}")

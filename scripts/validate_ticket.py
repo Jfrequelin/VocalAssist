@@ -30,7 +30,7 @@ def build_plan(
     tests: list[str],
     has_pyright: bool,
     has_pylint: bool,
-    pylint_disable: list[str],
+    pylint_fail_under: float,
 ) -> list[ValidationStep]:
     """Construit le plan de validation en fonction des outils disponibles."""
 
@@ -52,10 +52,9 @@ def build_plan(
         plan.append(ValidationStep(name="pyright", command=["pyright", *files]))
 
     if has_pylint:
-        disable_arg = f"--disable={','.join(pylint_disable)}" if pylint_disable else None
+        fail_under_arg = f"--fail-under={pylint_fail_under:g}"
         pylint_command = ["python3", "-m", "pylint"]
-        if disable_arg:
-            pylint_command.append(disable_arg)
+        pylint_command.append(fail_under_arg)
         pylint_command.extend(files)
         plan.append(
             ValidationStep(
@@ -81,27 +80,16 @@ def _run_step(step: ValidationStep, dry_run: bool) -> int:
 def main() -> int:
     """Point d'entree CLI du runner de validation."""
 
-    default_pylint_disable = [
-        "missing-module-docstring",
-        "missing-class-docstring",
-        "missing-function-docstring",
-        "too-few-public-methods",
-        "import-outside-toplevel",
-        "line-too-long",
-        "import-error",
-        "too-many-locals",
-    ]
-
     parser = argparse.ArgumentParser(description="Validation standard d'un ticket")
     parser.add_argument("--files", nargs="+", required=True, help="Fichiers modifies")
     parser.add_argument("--tests", nargs="*", default=[], help="Tests cibles a executer")
     parser.add_argument("--strict-pylance", action="store_true", help="Echoue si pyright indisponible")
     parser.add_argument("--strict-pylint", action="store_true", help="Echoue si pylint indisponible")
     parser.add_argument(
-        "--pylint-disable",
-        nargs="*",
-        default=default_pylint_disable,
-        help="Liste des regles pylint desactivees pour reduire le bruit",
+        "--pylint-fail-under",
+        type=float,
+        default=9.0,
+        help="Score minimal pylint requis (par defaut: 9.0)",
     )
     parser.add_argument("--dry-run", action="store_true", help="Affiche les commandes sans executer")
     args = parser.parse_args()
@@ -130,7 +118,7 @@ def main() -> int:
         tests=args.tests,
         has_pyright=has_pyright,
         has_pylint=has_pylint,
-        pylint_disable=args.pylint_disable,
+        pylint_fail_under=args.pylint_fail_under,
     )
 
     for step in plan:

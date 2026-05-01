@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class CircuitBreakerState(Enum):
     """Circuit breaker states."""
-    
+
     CLOSED = "closed"      # Normal operation
     OPEN = "open"          # Failing, block calls
     HALF_OPEN = "half_open"  # Testing recovery
@@ -28,7 +28,7 @@ class CircuitBreakerState(Enum):
 @dataclass
 class RetryPolicy:
     """Configuration for retry behavior."""
-    
+
     max_retries: int = 3
     initial_delay: float = 1.0
     backoff_factor: float = 2.0
@@ -38,29 +38,29 @@ class RetryPolicy:
 
     def get_delay(self, attempt: int) -> float:
         """Calculate delay for given attempt.
-        
+
         Args:
             attempt: Attempt number (1-indexed).
-            
+
         Returns:
             Delay in seconds.
         """
         delay = self.initial_delay * (self.backoff_factor ** (attempt - 1))
         delay = min(delay, self.max_delay)
-        
+
         if self.use_jitter:
             # Add random jitter (±10%)
             jitter = delay * 0.1 * random.uniform(-1, 1)
             delay += jitter
-        
+
         return max(0, delay)
 
     def should_retry(self, attempt: int) -> bool:
         """Check if should retry.
-        
+
         Args:
             attempt: Current attempt number.
-            
+
         Returns:
             True if should retry.
         """
@@ -68,10 +68,10 @@ class RetryPolicy:
 
     def should_retry_on_error(self, error: Exception) -> bool:
         """Check if should retry on specific error.
-        
+
         Args:
             error: The exception that occurred.
-            
+
         Returns:
             True if should retry.
         """
@@ -80,7 +80,7 @@ class RetryPolicy:
 
 class CircuitBreaker:
     """Circuit breaker for graceful degradation."""
-    
+
     def __init__(
         self,
         failure_threshold: int = 5,
@@ -88,7 +88,7 @@ class CircuitBreaker:
         success_threshold: int = 2,
     ) -> None:
         """Initialize circuit breaker.
-        
+
         Args:
             failure_threshold: Failures before opening circuit.
             recovery_timeout: Seconds before attempting recovery.
@@ -97,26 +97,26 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.success_threshold = success_threshold
-        
+
         self.state = CircuitBreakerState.CLOSED
         self.failure_count = 0
         self.success_count = 0
         self.last_failure_time = None
         self.last_state_change = datetime.now()
-        
+
         self.total_calls = 0
         self.total_success = 0
         self.total_failure = 0
 
     def allow_call(self) -> bool:
         """Check if call is allowed through circuit.
-        
+
         Returns:
             True if call allowed.
         """
         if self.state == CircuitBreakerState.CLOSED:
             return True
-        
+
         if self.state == CircuitBreakerState.OPEN:
             # Check if recovery timeout has elapsed
             if self.last_failure_time:
@@ -127,7 +127,7 @@ class CircuitBreaker:
                     logger.info("Circuit breaker entering HALF_OPEN state")
                     return True
             return False
-        
+
         # Half-open: allow call
         return True
 
@@ -135,7 +135,7 @@ class CircuitBreaker:
         """Record successful call."""
         self.total_calls += 1
         self.total_success += 1
-        
+
         if self.state == CircuitBreakerState.CLOSED:
             self.failure_count = 0
         elif self.state == CircuitBreakerState.HALF_OPEN:
@@ -151,7 +151,7 @@ class CircuitBreaker:
         self.total_calls += 1
         self.total_failure += 1
         self.last_failure_time = datetime.now()
-        
+
         if self.state == CircuitBreakerState.CLOSED:
             self.failure_count += 1
             if self.failure_count >= self.failure_threshold:
@@ -174,7 +174,7 @@ class CircuitBreaker:
 
     def get_metrics(self) -> dict[str, Any]:
         """Get circuit breaker metrics.
-        
+
         Returns:
             Dictionary with metrics.
         """
@@ -186,9 +186,9 @@ class CircuitBreaker:
                 "failure_count": 0,
                 "success_rate": 1.0,
             }
-        
+
         success_rate = self.total_success / self.total_calls
-        
+
         return {
             "state": self.state.value,
             "total_calls": self.total_calls,
@@ -200,10 +200,10 @@ class CircuitBreaker:
 
 class ResilienceManager:
     """Manages resilience strategies (retry, circuit breaker, fallback)."""
-    
+
     def __init__(self, adaptive_timeout: bool = False) -> None:
         """Initialize resilience manager.
-        
+
         Args:
             adaptive_timeout: Enable adaptive timeout adjustment.
         """
@@ -218,7 +218,7 @@ class ResilienceManager:
         recovery_timeout: int = 60,
     ) -> None:
         """Register circuit breaker for service.
-        
+
         Args:
             service_name: Service identifier.
             failure_threshold: Failures before opening.
@@ -231,10 +231,10 @@ class ResilienceManager:
 
     def has_breaker(self, service_name: str) -> bool:
         """Check if breaker exists for service.
-        
+
         Args:
             service_name: Service identifier.
-            
+
         Returns:
             True if breaker registered.
         """
@@ -246,22 +246,22 @@ class ResilienceManager:
         operation: Callable[[], Any],
     ) -> Any:
         """Execute operation with circuit breaker protection.
-        
+
         Args:
             service_name: Service identifier.
             operation: Callable to execute.
-            
+
         Returns:
             Operation result.
-            
+
         Raises:
             Exception if circuit open or operation fails.
         """
         breaker = self.breakers.get(service_name)
-        
+
         if breaker and not breaker.allow_call():
             raise Exception(f"Circuit breaker open for {service_name}")
-        
+
         start_time = time.time()
         try:
             result = operation()
@@ -284,38 +284,38 @@ class ResilienceManager:
         retry_policy: Optional[RetryPolicy] = None,
     ) -> Any:
         """Execute with automatic retry.
-        
+
         Args:
             service_name: Service identifier.
             operation: Callable to execute.
             retry_policy: Retry configuration.
-            
+
         Returns:
             Operation result.
         """
         if retry_policy is None:
             retry_policy = RetryPolicy()
-        
+
         attempt = 1
         last_error = None
-        
+
         while attempt <= retry_policy.max_retries:
             try:
                 return self.execute(service_name, operation)
             except Exception as e:
                 last_error = e
-                
+
                 if not retry_policy.should_retry(attempt):
                     break
-                
+
                 if not retry_policy.should_retry_on_error(e):
                     break
-                
+
                 delay = retry_policy.get_delay(attempt)
                 logger.info(f"Retry {attempt} for {service_name} after {delay}s")
                 time.sleep(delay)
                 attempt += 1
-        
+
         if last_error:
             raise last_error
         return None
@@ -327,12 +327,12 @@ class ResilienceManager:
         fallback: Callable[[], Any],
     ) -> Any:
         """Execute with fallback on failure.
-        
+
         Args:
             service_name: Service identifier.
             operation: Primary operation.
             fallback: Fallback operation.
-            
+
         Returns:
             Result from primary or fallback.
         """
@@ -349,12 +349,12 @@ class ResilienceManager:
         timeout: float = 30.0,
     ) -> Optional[Any]:
         """Execute with timeout.
-        
+
         Args:
             service_name: Service identifier.
             operation: Callable to execute.
             timeout: Timeout in seconds.
-            
+
         Returns:
             Operation result or None on timeout.
         """
@@ -368,36 +368,36 @@ class ResilienceManager:
 
     def record_execution_time(self, service_name: str, duration: float) -> None:
         """Record execution time for adaptive timeout.
-        
+
         Args:
             service_name: Service identifier.
             duration: Execution time in seconds.
         """
         if service_name not in self.execution_times:
             self.execution_times[service_name] = []
-        
+
         self.execution_times[service_name].append(duration)
-        
+
         # Keep only recent 100 measurements
         if len(self.execution_times[service_name]) > 100:
             self.execution_times[service_name] = self.execution_times[service_name][-100:]
 
     def get_adaptive_timeout(self, service_name: str) -> float:
         """Get adaptive timeout based on historical performance.
-        
+
         Args:
             service_name: Service identifier.
-            
+
         Returns:
             Recommended timeout in seconds.
         """
         if service_name not in self.execution_times:
             return 30.0
-        
+
         times = self.execution_times[service_name]
         if not times:
             return 30.0
-        
+
         avg_time = sum(times) / len(times)
         # Use average + 2 * standard deviation + 5s margin
         return min(avg_time * 2 + 5, 60)
@@ -408,14 +408,14 @@ class ResilienceManager:
 
     def get_resilience_stats(self) -> dict[str, Any]:
         """Get resilience statistics.
-        
+
         Returns:
             Dictionary with stats.
         """
         total_ops = 0
         total_success = 0
         total_failure = 0
-        
+
         breaker_states: dict[str, str] = {}
         for name, breaker in self.breakers.items():
             metrics = breaker.get_metrics()
@@ -423,7 +423,7 @@ class ResilienceManager:
             total_success += metrics["success_count"]
             total_failure += metrics["failure_count"]
             breaker_states[name] = metrics["state"]
-        
+
         return {
             "total_operations": total_ops,
             "total_success": total_success,

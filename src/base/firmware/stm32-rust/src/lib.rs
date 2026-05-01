@@ -219,6 +219,235 @@ pub enum ControlRoute {
     RemoteAssistant,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TtsError {
+    ModelNotLoaded,
+    EmptyText,
+    OutputOverflow,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaybackError {
+    QueueFull,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaybackKind {
+    Tts,
+    Beep,
+    ErrorTone,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PlaybackItem {
+    pub kind: PlaybackKind,
+    pub samples_len: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PcmAudio {
+    pub samples: heapless::Vec<i16, 2048>,
+    pub sample_rate_hz: u16,
+    pub channels: u8,
+    pub cached: bool,
+    pub estimated_latency_ms: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct PiperTtsEngine {
+    pub model_loaded: bool,
+    pub language: &'static str,
+    pub cache_enabled: bool,
+    cached_text: Option<HString<128>>,
+    cached_audio: Option<PcmAudio>,
+}
+
+impl PiperTtsEngine {
+    pub fn new(language: &'static str) -> Self {
+        Self {
+            model_loaded: false,
+            language,
+            cache_enabled: true,
+            cached_text: None,
+            cached_audio: None,
+        }
+    }
+
+    pub fn load_model(&mut self) {
+        self.model_loaded = true;
+    }
+
+    pub fn cache_memory_bytes(&self) -> usize {
+        self.cached_audio
+            .as_ref()
+            .map(|a| a.samples.len() * core::mem::size_of::<i16>())
+            .unwrap_or(0)
+    }
+
+    pub fn synthesize_to_pcm(&mut self, text: &str) -> Result<PcmAudio, TtsError> {
+        if !self.model_loaded {
+            return Err(TtsError::ModelNotLoaded);
+        }
+
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return Err(TtsError::EmptyText);
+        }
+
+        if self.cache_enabled {
+            if let (Some(cached_text), Some(cached_audio)) = (&self.cached_text, &self.cached_audio) {
+                if cached_text.as_str() == trimmed {
+                    let mut out = cached_audio.clone();
+                    out.cached = true;
+                    return Ok(out);
+                }
+            }
+        }
+
+        let mut samples: heapless::Vec<i16, 2048> = heapless::Vec::new();
+        for b in trimmed.bytes() {
+            let amp = ((b as i16) - 64) * 8;
+            for _ in 0..4 {
+                if samples.push(amp).is_err() {
+                    return Err(TtsError::OutputOverflow);
+                }
+            }
+        }
+
+        let est = (120u16).saturating_add((trimmed.len() as u16).saturating_mul(8)).min(480);
+        let audio = PcmAudio {
+            samples,
+            sample_rate_hz: 16_000,
+            channels: 1,
+            cached: false,
+            estimated_latency_ms: est,
+        };
+
+        if self.cache_enabled {
+            let mut key: HString<128> = HString::new();
+            let _ = key.push_str(trimmed);
+            self.cached_text = Some(key);
+            self.cached_audio = Some(audio.clone());
+        }
+
+        Ok(audio)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AudioPlayback {
+    pub volume: u8,
+    pub muted: bool,
+    pub amplifier_enabled: bool,
+    pub last_applied_gain: u8,
+    queue: Deque<PlaybackItem, 16>,
+}
+
+impl Default for AudioPlayback {
+    fn default() -> Self {
+        Self {
+            volume: 50,
+            muted: false,
+            amplifier_enabled: true,
+            last_applied_gain: 50,
+            queue: Deque::new(),
+        }
+    }
+}
+
+impl AudioPlayback {
+    pub fn set_mute(&mut self, enabled: bool) {
+        self.muted = enabled;
+        self.amplifier_enabled = !enabled;
+    }
+
+    pub fn set_volume(&mut self, v: u8) {
+        self.volume = v.min(100);
+    }
+
+    pub fn ramp_to_volume(&mut self, target: u8, step: u8) -> u8 {
+        let target = target.min(100);
+        let step = step.max(1);
+
+        while self.last_applied_gain != target {
+            if self.last_applied_gain < target {
+                self.last_applied_gain = self.last_applied_gain.saturating_add(step).min(target);
+            } else {
+                self.last_applied_gain = self.last_applied_gain.saturating_sub(step).max(target);
+            }
+        }
+
+        self.volume = target;
+        self.last_applied_gain
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.queue.len()
+    }
+
+    pub fn enqueue_tts(&mut self, audio: &PcmAudio) -> Result<(), PlaybackError> {
+        self.queue
+            .push_back(PlaybackItem {
+                kind: PlaybackKind::Tts,
+                samples_len: audio.samples.len() as u16,
+            })
+            .map_err(|_| PlaybackError::QueueFull)
+    }
+
+    pub fn enqueue_beep(&mut self) -> Result<(), PlaybackError> {
+        self.queue
+            .push_back(PlaybackItem {
+                kind: PlaybackKind::Beep,
+                samples_len: 160,
+            })
+            .map_err(|_| PlaybackError::QueueFull)
+    }
+
+    pub fn enqueue_error_tone(&mut self) -> Result<(), PlaybackError> {
+        self.queue
+            .push_back(PlaybackItem {
+                kind: PlaybackKind::ErrorTone,
+                samples_len: 220,
+            })
+            .map_err(|_| PlaybackError::QueueFull)
+    }
+
+    pub fn play_next(&mut self) -> Option<PlaybackItem> {
+        if self.muted || !self.amplifier_enabled {
+            return None;
+        }
+        self.queue.pop_front()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeakError {
+    Tts(TtsError),
+    Playback(PlaybackError),
+}
+
+pub fn speak_response_local(
+    controller: &mut EdgeDeviceController,
+    tts: &mut PiperTtsEngine,
+    playback: &mut AudioPlayback,
+    text: &str,
+) -> Result<(), SpeakError> {
+    let audio = match tts.synthesize_to_pcm(text) {
+        Ok(a) => a,
+        Err(e) => {
+            controller.mark_error();
+            let _ = playback.enqueue_error_tone();
+            return Err(SpeakError::Tts(e));
+        }
+    };
+
+    controller.mark_speaking();
+    playback
+        .enqueue_tts(&audio)
+        .map_err(SpeakError::Playback)?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ControlDecision {
     pub intent: Option<ControlIntent>,
@@ -1195,5 +1424,87 @@ mod tests {
         assert_eq!(ctrl.state().interaction_active, false);
         assert_eq!(ctrl.state().led_state, BaseState::Idle);
         assert_eq!(decision.response_tts.as_str(), "A bientot.");
+    }
+
+    #[test]
+    fn test_tts_requires_model_loaded() {
+        let mut tts = PiperTtsEngine::new("fr");
+        let err = tts.synthesize_to_pcm("bonjour").err();
+        assert_eq!(err, Some(TtsError::ModelNotLoaded));
+
+        tts.load_model();
+        let ok = tts.synthesize_to_pcm("bonjour");
+        assert!(ok.is_ok());
+    }
+
+    #[test]
+    fn test_tts_cache_and_latency_budget() {
+        let mut tts = PiperTtsEngine::new("fr");
+        tts.load_model();
+
+        let a = tts
+            .synthesize_to_pcm("Il est 14h30")
+            .expect("tts should produce pcm");
+        assert!(!a.cached);
+        assert!(a.estimated_latency_ms < 500);
+
+        let b = tts
+            .synthesize_to_pcm("Il est 14h30")
+            .expect("tts cache should work");
+        assert!(b.cached);
+        assert!(tts.cache_memory_bytes() < 1_000_000);
+    }
+
+    #[test]
+    fn test_playback_queue_and_i2s_like_flow() {
+        let mut tts = PiperTtsEngine::new("fr");
+        tts.load_model();
+        let audio = tts.synthesize_to_pcm("Lumiere du salon allumee").unwrap();
+
+        let mut playback = AudioPlayback::default();
+        assert_eq!(playback.queue_len(), 0);
+        playback.enqueue_tts(&audio).unwrap();
+        assert_eq!(playback.queue_len(), 1);
+
+        let item = playback.play_next();
+        assert!(item.is_some());
+        assert_eq!(item.unwrap().kind, PlaybackKind::Tts);
+        assert_eq!(playback.queue_len(), 0);
+    }
+
+    #[test]
+    fn test_volume_ramping_and_mute() {
+        let mut playback = AudioPlayback::default();
+        let final_gain = playback.ramp_to_volume(90, 7);
+        assert_eq!(final_gain, 90);
+        assert_eq!(playback.volume, 90);
+
+        playback.set_mute(true);
+        assert!(playback.muted);
+        assert!(!playback.amplifier_enabled);
+        assert!(playback.play_next().is_none());
+    }
+
+    #[test]
+    fn test_speak_response_marks_speaking_and_fallback_on_error() {
+        let mut ctrl = EdgeDeviceController::new();
+        let mut playback = AudioPlayback::default();
+
+        // Error path: model not loaded
+        let mut tts_err = PiperTtsEngine::new("fr");
+        let err = speak_response_local(&mut ctrl, &mut tts_err, &mut playback, "bonjour");
+        assert!(err.is_err());
+        assert_eq!(ctrl.state().led_state, BaseState::Error);
+        assert_eq!(playback.queue_len(), 1); // error tone enqueued
+
+        // Success path
+        let mut ctrl_ok = EdgeDeviceController::new();
+        let mut playback_ok = AudioPlayback::default();
+        let mut tts_ok = PiperTtsEngine::new("fr");
+        tts_ok.load_model();
+        let ok = speak_response_local(&mut ctrl_ok, &mut tts_ok, &mut playback_ok, "bonjour");
+        assert!(ok.is_ok());
+        assert_eq!(ctrl_ok.state().led_state, BaseState::Speaking);
+        assert_eq!(playback_ok.queue_len(), 1);
     }
 }

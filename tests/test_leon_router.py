@@ -41,7 +41,7 @@ class TestRoutingContext(unittest.TestCase):
             detected_intent="weather",
             confidence=0.85
         )
-        
+
         self.assertEqual(context.user_input, "What's the weather?")
         self.assertEqual(context.detected_intent, "weather")
         self.assertEqual(context.confidence, 0.85)
@@ -54,7 +54,7 @@ class TestRoutingContext(unittest.TestCase):
             confidence=0.9,
             prefer_local=True
         )
-        
+
         self.assertTrue(context.prefer_local)
 
     def test_context_with_metadata(self) -> None:
@@ -65,7 +65,7 @@ class TestRoutingContext(unittest.TestCase):
             confidence=0.8,
             metadata={"time": "tomorrow", "title": "Meeting"}
         )
-        
+
         self.assertIn("time", context.metadata)
         self.assertEqual(context.metadata["title"], "Meeting")
 
@@ -80,7 +80,7 @@ class TestRoutingDecision(unittest.TestCase):
             confidence=0.95,
             reason="High confidence local intent"
         )
-        
+
         self.assertEqual(decision.route, LeonRoute.LOCAL)
         self.assertEqual(decision.confidence, 0.95)
 
@@ -92,7 +92,7 @@ class TestRoutingDecision(unittest.TestCase):
             reason="Medium confidence",
             fallback_route=LeonRoute.LOCAL
         )
-        
+
         self.assertEqual(decision.fallback_route, LeonRoute.LOCAL)
 
     def test_decision_with_parameters(self) -> None:
@@ -103,7 +103,7 @@ class TestRoutingDecision(unittest.TestCase):
             reason="Need external NLU",
             extracted_params={"duration": "2 hours", "topic": "machine learning"}
         )
-        
+
         self.assertIn("duration", decision.extracted_params)
 
 
@@ -120,9 +120,9 @@ class TestIntelligentRouter(unittest.TestCase):
             detected_intent="light",
             confidence=0.95
         )
-        
+
         decision = self.router.route(context)
-        
+
         self.assertEqual(decision.route, LeonRoute.LOCAL)
         self.assertGreater(decision.confidence, 0.9)
 
@@ -133,9 +133,9 @@ class TestIntelligentRouter(unittest.TestCase):
             detected_intent="unknown",
             confidence=0.3
         )
-        
+
         decision = self.router.route(context)
-        
+
         self.assertEqual(decision.route, LeonRoute.LEON)
 
     def test_complex_intent_routing(self) -> None:
@@ -145,9 +145,9 @@ class TestIntelligentRouter(unittest.TestCase):
             detected_intent="weather",
             confidence=0.7
         )
-        
+
         decision = self.router.route(context)
-        
+
         # Complex query with medium confidence should go to LOCAL with LEON fallback
         # The router will try LOCAL first, but has LEON as fallback for better understanding
         self.assertIn(decision.route, [LeonRoute.LOCAL, LeonRoute.LEON])
@@ -160,9 +160,9 @@ class TestIntelligentRouter(unittest.TestCase):
             detected_intent="time",
             confidence=0.9
         )
-        
+
         decision = self.router.route(context)
-        
+
         # High confidence + cached intent
         self.assertIn(decision.route, [LeonRoute.LOCAL, LeonRoute.CACHE])
 
@@ -174,9 +174,9 @@ class TestIntelligentRouter(unittest.TestCase):
             confidence=0.7,
             prefer_local=True
         )
-        
+
         decision = self.router.route(context)
-        
+
         # User prefers local should try local first
         self.assertEqual(decision.route, LeonRoute.LOCAL)
 
@@ -188,9 +188,9 @@ class TestIntelligentRouter(unittest.TestCase):
             confidence=0.8,
             is_offline=True
         )
-        
+
         decision = self.router.route(context)
-        
+
         # Must route to LOCAL or CACHE when offline
         self.assertNotEqual(decision.route, LeonRoute.LEON)
 
@@ -201,9 +201,9 @@ class TestIntelligentRouter(unittest.TestCase):
             detected_intent="unknown",
             confidence=0.2
         )
-        
+
         decision = self.router.route(context)
-        
+
         # Should have fallback plan
         self.assertIsNotNone(decision.fallback_route)
 
@@ -214,16 +214,16 @@ class TestIntelligentRouter(unittest.TestCase):
             detected_intent="light",
             confidence=0.95
         )
-        
+
         low_conf = RoutingContext(
             user_input="Turn on lights",
             detected_intent="light",
             confidence=0.55
         )
-        
+
         high_decision = self.router.route(high_conf)
         low_decision = self.router.route(low_conf)
-        
+
         # Higher confidence should prefer LOCAL
         self.assertEqual(high_decision.route, LeonRoute.LOCAL)
         # Lower confidence should consider LEON
@@ -245,7 +245,7 @@ class TestRoutingIntegration(unittest.TestCase):
             confidence=0.85
         )
         decision1 = self.router.route(context1)
-        
+
         # Second turn (follow-up)
         context2 = RoutingContext(
             user_input="For tomorrow at 9am",
@@ -254,7 +254,7 @@ class TestRoutingIntegration(unittest.TestCase):
             parent_context=context1
         )
         decision2 = self.router.route(context2)
-        
+
         # Both should be handled effectively
         self.assertIsNotNone(decision1)
         self.assertIsNotNone(decision2)
@@ -266,7 +266,7 @@ class TestRoutingIntegration(unittest.TestCase):
             "How's the weather today?",
             "Tell me the weather",
         ]
-        
+
         decisions: list[RoutingDecision] = []
         for query in queries:
             context = RoutingContext(
@@ -275,7 +275,7 @@ class TestRoutingIntegration(unittest.TestCase):
                 confidence=0.8
             )
             decisions.append(self.router.route(context))
-        
+
         # Similar queries should get similar routing
         routes = [d.route for d in decisions]
         self.assertTrue(all(r == routes[0] for r in routes))
@@ -287,16 +287,16 @@ class TestRoutingIntegration(unittest.TestCase):
             detected_intent="time",
             confidence=0.95
         )
-        
+
         complex_context = RoutingContext(
             user_input="Analyze the best strategies for optimizing distributed systems",
             detected_intent="analysis",
             confidence=0.6
         )
-        
+
         simple_decision = self.router.route(simple_context)
         complex_decision = self.router.route(complex_context)
-        
+
         # Simple query to LOCAL (low cost)
         self.assertEqual(simple_decision.route, LeonRoute.LOCAL)
         # Complex query might go to LEON or require external processing
@@ -311,9 +311,9 @@ class TestRoutingIntegration(unittest.TestCase):
                 confidence=0.7
             )
             self.router.route(context)
-        
+
         stats = self.router.get_routing_stats()
-        
+
         self.assertEqual(stats["total_routed"], 10)
         self.assertIn("by_route", stats)
 

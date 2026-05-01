@@ -33,13 +33,13 @@ class TestSTTLatency(unittest.TestCase):
         """Mock STT has minimal latency."""
         iterations = 100
         times: list[float] = []
-        
+
         for _ in range(iterations):
             start = perf_counter()
             self.stt_mock.transcribe("test text")
             elapsed = perf_counter() - start
             times.append(elapsed)
-        
+
         avg_time = sum(times) / len(times)
         # Mock should be very fast (< 1ms typically)
         self.assertLess(avg_time, 0.01)  # 10ms tolerance
@@ -48,14 +48,14 @@ class TestSTTLatency(unittest.TestCase):
         """Real STT with text fallback is fast."""
         iterations = 10
         times: list[float] = []
-        
+
         for _ in range(iterations):
             start = perf_counter()
             # Non-file inputs are fast (fallback)
             self.stt_real.transcribe("text input not a file")
             elapsed = perf_counter() - start
             times.append(elapsed)
-        
+
         avg_time = sum(times) / len(times)
         # Fallback should be fast too (< 50ms)
         self.assertLess(avg_time, 0.05)
@@ -64,15 +64,15 @@ class TestSTTLatency(unittest.TestCase):
         """STT latency scales reasonably with input size."""
         small_input = "short"
         large_input = "This is a much longer text with more words " * 10
-        
+
         time_small = perf_counter()
         self.stt_mock.transcribe(small_input)
         time_small = perf_counter() - time_small
-        
+
         time_large = perf_counter()
         self.stt_mock.transcribe(large_input)
         time_large = perf_counter() - time_large
-        
+
         # Both should be fast
         self.assertLess(time_small, 0.01)
         self.assertLess(time_large, 0.01)
@@ -95,13 +95,13 @@ class TestTTSLatency(unittest.TestCase):
         """Mock TTS has minimal latency."""
         iterations = 100
         times: list[float] = []
-        
+
         for _ in range(iterations):
             start = perf_counter()
             self.tts_mock.synthesize("response text")
             elapsed = perf_counter() - start
             times.append(elapsed)
-        
+
         avg_time = sum(times) / len(times)
         # Mock should be very fast (< 1ms)
         self.assertLess(avg_time, 0.01)
@@ -109,7 +109,7 @@ class TestTTSLatency(unittest.TestCase):
     def test_tts_latency_with_real_model_missing(self):
         """TTS latency when model missing."""
         tts = PiperTextToSpeech(model_path="/nonexistent.onnx", output_dir=self.temp_dir)
-        
+
         # Should raise error quickly
         with self.assertRaises(RuntimeError):
             tts.synthesize("text")
@@ -118,15 +118,15 @@ class TestTTSLatency(unittest.TestCase):
         """TTS latency scales with response length."""
         short_response = "OK"
         long_response = "This is a much longer response with many words " * 5
-        
+
         time_short = perf_counter()
         self.tts_mock.synthesize(short_response)
         time_short = perf_counter() - time_short
-        
+
         time_long = perf_counter()
         self.tts_mock.synthesize(long_response)
         time_long = perf_counter() - time_long
-        
+
         # Both should be fast
         self.assertLess(time_short, 0.01)
         self.assertLess(time_long, 0.01)
@@ -143,13 +143,13 @@ class TestPipelineLatency(unittest.TestCase):
     def test_pipeline_latency_nominal(self):
         """Full pipeline nominal latency."""
         start = perf_counter()
-        
+
         transcription = self.stt.transcribe("nova test command")
         response = f"Response to: {transcription}"
         audio_output = self.tts.synthesize(response)
-        
+
         elapsed = perf_counter() - start
-        
+
         # Full pipeline should be fast (< 10ms for mock)
         self.assertLess(elapsed, 0.01)
         self.assertIsNotNone(audio_output)
@@ -157,17 +157,17 @@ class TestPipelineLatency(unittest.TestCase):
     def test_pipeline_latency_repeated(self):
         """Pipeline latency across repeated calls."""
         times: list[float] = []
-        
+
         for i in range(20):
             start = perf_counter()
             self.stt.transcribe(f"command {i}")
             self.tts.synthesize(f"response {i}")
             elapsed = perf_counter() - start
             times.append(elapsed)
-        
+
         avg_time = sum(times) / len(times)
         max_time = max(times)
-        
+
         # Average should be consistently fast
         self.assertLess(avg_time, 0.01)
         # No significant outliers (no spike beyond 5x average)
@@ -287,11 +287,11 @@ class TestPipelineErrorRecovery(unittest.TestCase):
             self.tts.synthesize("normal output")
         except Exception:
             pass
-        
+
         # Should still work normally
         result_stt = self.stt.transcribe("test")
         result_tts = self.tts.synthesize("test")
-        
+
         self.assertEqual(result_stt, "test")
         self.assertEqual(result_tts, "test")
 
@@ -302,12 +302,12 @@ class TestPipelineErrorRecovery(unittest.TestCase):
             ("normal", "normal"),
             ("long " * 100, "long " * 100),
         ]
-        
+
         for input_text, expected in error_scenarios:
             try:
                 stt_result = self.stt.transcribe(input_text)
                 tts_result = self.tts.synthesize(stt_result)
-                
+
                 if expected == "":
                     self.assertEqual(stt_result, "")
                 else:
@@ -339,10 +339,10 @@ class TestEndToEndErrorCases(unittest.TestCase):
     def test_e2e_consistency_across_stages(self):
         """E2E: consistency verification."""
         test_input = "nova test message"
-        
+
         stt_out = self.stt.transcribe(test_input)
         tts_out = self.tts.synthesize(stt_out)
-        
+
         # Should pass through unchanged in mock
         self.assertEqual(stt_out, test_input)
         self.assertEqual(tts_out, test_input)
@@ -351,12 +351,12 @@ class TestEndToEndErrorCases(unittest.TestCase):
         """E2E: rapid sequential commands don't interfere."""
         commands = [f"cmd{i}" for i in range(10)]
         results: list[tuple[str, str]] = []
-        
+
         for cmd in commands:
             stt_out = self.stt.transcribe(cmd)
             tts_out = self.tts.synthesize(stt_out)
             results.append((stt_out, tts_out))
-        
+
         # Each should maintain its own state
         for i, (stt_out, tts_out) in enumerate(results):
             self.assertEqual(stt_out, commands[i])

@@ -47,7 +47,7 @@ class TestNewCriticalIntents(unittest.TestCase):
     def test_all_intents_have_keywords(self) -> None:
         """Test that all registered intents have keywords."""
         ordered = self.registry.get_ordered()
-        
+
         for intent_id, data in ordered:
             keywords = data.get("keywords", [])
             self.assertIsInstance(keywords, list, f"Intent {intent_id} keywords should be a list")
@@ -55,7 +55,7 @@ class TestNewCriticalIntents(unittest.TestCase):
     def test_all_intents_have_priority(self) -> None:
         """Test that all registered intents have priority."""
         ordered = self.registry.get_ordered()
-        
+
         for intent_id, data in ordered:
             priority = data.get("priority")
             self.assertIsNotNone(priority, f"Intent {intent_id} should have priority")
@@ -84,7 +84,7 @@ class TestIntentCoverageForLocalUnderstanding(unittest.TestCase):
     def test_system_control_intents_present(self) -> None:
         """Test that system control intents are available."""
         system_intents = ["exit", "restart", "mute", "volume", "system_help"]
-        
+
         for intent in system_intents:
             result = self.registry.get(intent)
             self.assertIsNotNone(result, f"System intent '{intent}' should be registered")
@@ -92,7 +92,7 @@ class TestIntentCoverageForLocalUnderstanding(unittest.TestCase):
     def test_information_query_intents_present(self) -> None:
         """Test that information query intents are available."""
         info_intents = ["time", "date", "weather", "agenda", "reminder"]
-        
+
         for intent in info_intents:
             result = self.registry.get(intent)
             self.assertIsNotNone(result, f"Info intent '{intent}' should be registered")
@@ -100,7 +100,7 @@ class TestIntentCoverageForLocalUnderstanding(unittest.TestCase):
     def test_home_automation_intents_present(self) -> None:
         """Test that home automation intents are available."""
         home_intents = ["light", "temperature", "music"]
-        
+
         for intent in home_intents:
             result = self.registry.get(intent)
             self.assertIsNotNone(result, f"Home intent '{intent}' should be registered")
@@ -115,7 +115,7 @@ class TestIntentCoverageForLocalUnderstanding(unittest.TestCase):
             ("coupe le son", "mute"),
             ("quel est le programme demain", "agenda"),
         ]
-        
+
         for text, _expected_intent in test_cases:
             matched = self.registry.find_intent(text)
             self.assertIsNotNone(matched, f"Should find intent for '{text}'")

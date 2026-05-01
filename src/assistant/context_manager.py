@@ -29,7 +29,7 @@ class ConversationData(TypedDict):
 @dataclass
 class ConversationContext:
     """Single turn in a conversation."""
-    
+
     user_input: str
     assistant_response: str
     intent: str
@@ -43,10 +43,10 @@ class ConversationContext:
 
 class ContextMemory:
     """Manages conversation memory with configurable size."""
-    
+
     def __init__(self, max_turns: int = 20) -> None:
         """Initialize context memory.
-        
+
         Args:
             max_turns: Maximum turns to keep in memory.
         """
@@ -55,19 +55,19 @@ class ContextMemory:
 
     def add_turn(self, context: ConversationContext) -> None:
         """Add turn to memory.
-        
+
         Args:
             context: Conversation context to add.
         """
         self.turns.append(context)
-        
+
         # Keep only recent turns
         if len(self.turns) > self.max_turns:
             self.turns = self.turns[-self.max_turns:]
 
     def get_turns(self) -> list[ConversationContext]:
         """Get all turns in memory.
-        
+
         Returns:
             List of conversation contexts.
         """
@@ -75,10 +75,10 @@ class ContextMemory:
 
     def get_recent_turns(self, count: int = 5) -> list[ConversationContext]:
         """Get recent turns.
-        
+
         Args:
             count: Number of recent turns to return.
-            
+
         Returns:
             List of recent contexts.
         """
@@ -86,10 +86,10 @@ class ContextMemory:
 
     def search_by_intent(self, intent: str) -> list[ConversationContext]:
         """Search memory by intent.
-        
+
         Args:
             intent: Intent to search for.
-            
+
         Returns:
             List of contexts with matching intent.
         """
@@ -97,11 +97,11 @@ class ContextMemory:
 
     def search_by_entity(self, entity_key: str, entity_value: str) -> list[ConversationContext]:
         """Search memory by entity.
-        
+
         Args:
             entity_key: Entity key to search.
             entity_value: Entity value to match.
-            
+
         Returns:
             List of contexts with matching entity.
         """
@@ -112,14 +112,14 @@ class ContextMemory:
 
     def get_summary(self) -> dict[str, Any]:
         """Get memory summary.
-        
+
         Returns:
             Dictionary with memory statistics.
         """
         intents: dict[str, int] = {}
         for turn in self.turns:
             intents[turn.intent] = intents.get(turn.intent, 0) + 1
-        
+
         return {
             "total_turns": len(self.turns),
             "intents": intents,
@@ -134,14 +134,14 @@ class ContextMemory:
 
 class StateTracker:
     """Manages conversation state with TTL support."""
-    
+
     def __init__(self) -> None:
         """Initialize state tracker."""
         self.state: dict[str, tuple[Any, Optional[float]]] = {}
 
     def set_state(self, key: str, value: Any, ttl: Optional[float] = None) -> None:
         """Set state value.
-        
+
         Args:
             key: State key.
             value: State value.
@@ -152,31 +152,31 @@ class StateTracker:
 
     def get_state(self, key: str) -> Any:
         """Get state value.
-        
+
         Args:
             key: State key.
-            
+
         Returns:
             State value or None if not found or expired.
         """
         if key not in self.state:
             return None
-        
+
         value, expiry = self.state[key]
-        
+
         # Check expiration
         if expiry and time.time() > expiry:
             del self.state[key]
             return None
-        
+
         return value
 
     def has_state(self, key: str) -> bool:
         """Check if state exists and is not expired.
-        
+
         Args:
             key: State key.
-            
+
         Returns:
             True if state exists and is valid.
         """
@@ -184,10 +184,10 @@ class StateTracker:
 
     def delete_state(self, key: str) -> bool:
         """Delete state.
-        
+
         Args:
             key: State key.
-            
+
         Returns:
             True if deleted, False if not found.
         """
@@ -202,39 +202,39 @@ class StateTracker:
 
     def get_all_state(self) -> dict[str, Any]:
         """Get all non-expired state.
-        
+
         Returns:
             Dictionary of all state.
         """
         result: dict[str, Any] = {}
         expired_keys: list[str] = []
-        
+
         for key, (value, expiry) in self.state.items():
             if expiry and time.time() > expiry:
                 expired_keys.append(key)
             else:
                 result[key] = value
-        
+
         # Clean up expired keys
         for key in expired_keys:
             del self.state[key]
-        
+
         return result
 
 
 class ConversationManager:
     """Manages multiple concurrent conversations."""
-    
+
     def __init__(self) -> None:
         """Initialize conversation manager."""
         self.conversations: dict[str, ConversationData] = {}
 
     def start_conversation(self, user_id: str) -> str:
         """Start a new conversation.
-        
+
         Args:
             user_id: User identifier.
-            
+
         Returns:
             Conversation ID.
         """
@@ -259,7 +259,7 @@ class ConversationManager:
         **kwargs: Any
     ) -> None:
         """Add user-assistant exchange to conversation.
-        
+
         Args:
             conv_id: Conversation ID.
             user_input: User message.
@@ -270,51 +270,51 @@ class ConversationManager:
         if conv_id not in self.conversations:
             logger.warning(f"Conversation {conv_id} not found")
             return
-        
+
         context = ConversationContext(
             user_input=user_input,
             assistant_response=assistant_response,
             intent=intent,
             **{k: v for k, v in kwargs.items() if k in ['confidence', 'slots', 'entities', 'metadata']}
         )
-        
+
         self.conversations[conv_id]["memory"].add_turn(context)
 
     def get_conversation_history(self, conv_id: str) -> list[ConversationContext]:
         """Get conversation history.
-        
+
         Args:
             conv_id: Conversation ID.
-            
+
         Returns:
             List of conversation contexts.
         """
         if conv_id not in self.conversations:
             return []
-        
+
         return self.conversations[conv_id]["memory"].get_turns()
 
     def get_recent_context(self, conv_id: str, count: int = 5) -> list[ConversationContext]:
         """Get recent conversation context.
-        
+
         Args:
             conv_id: Conversation ID.
             count: Number of recent turns.
-            
+
         Returns:
             List of recent contexts.
         """
         if conv_id not in self.conversations:
             return []
-        
+
         return self.conversations[conv_id]["memory"].get_recent_turns(count)
 
     def get_last_intent(self, conv_id: str) -> Optional[str]:
         """Get last intent in conversation.
-        
+
         Args:
             conv_id: Conversation ID.
-            
+
         Returns:
             Last intent or None.
         """
@@ -329,21 +329,21 @@ class ConversationManager:
         entity_value: Optional[str] = None,
     ) -> list[ConversationContext]:
         """Search conversation history.
-        
+
         Args:
             conv_id: Conversation ID.
             intent: Filter by intent.
             entity_key: Filter by entity key.
             entity_value: Filter by entity value.
-            
+
         Returns:
             Filtered conversation contexts.
         """
         if conv_id not in self.conversations:
             return []
-        
+
         memory = self.conversations[conv_id]["memory"]
-        
+
         if intent:
             return memory.search_by_intent(intent)
         elif entity_key and entity_value:
@@ -353,7 +353,7 @@ class ConversationManager:
 
     def set_conversation_state(self, conv_id: str, key: str, value: Any, ttl: Optional[float] = None) -> None:
         """Set conversation state.
-        
+
         Args:
             conv_id: Conversation ID.
             key: State key.
@@ -362,27 +362,27 @@ class ConversationManager:
         """
         if conv_id not in self.conversations:
             return
-        
+
         self.conversations[conv_id]["state"].set_state(key, value, ttl)
 
     def get_conversation_state(self, conv_id: str, key: str) -> Any:
         """Get conversation state.
-        
+
         Args:
             conv_id: Conversation ID.
             key: State key.
-            
+
         Returns:
             State value or None.
         """
         if conv_id not in self.conversations:
             return None
-        
+
         return self.conversations[conv_id]["state"].get_state(key)
 
     def end_conversation(self, conv_id: str) -> None:
         """End a conversation.
-        
+
         Args:
             conv_id: Conversation ID.
         """
@@ -393,10 +393,10 @@ class ConversationManager:
 
     def conversation_exists(self, conv_id: str) -> bool:
         """Check if conversation exists.
-        
+
         Args:
             conv_id: Conversation ID.
-            
+
         Returns:
             True if conversation exists.
         """
@@ -404,7 +404,7 @@ class ConversationManager:
 
     def get_active_conversations(self) -> list[str]:
         """Get list of active conversation IDs.
-        
+
         Returns:
             List of active conversation IDs.
         """
@@ -415,37 +415,37 @@ class ConversationManager:
 
     def cleanup_old_conversations(self, hours: int = 24) -> int:
         """Clean up old conversations.
-        
+
         Args:
             hours: Age threshold in hours.
-            
+
         Returns:
             Number of conversations cleaned.
         """
         cutoff = datetime.now() - timedelta(hours=hours)
         to_delete: list[str] = []
-        
+
         for conv_id, conv in self.conversations.items():
             if conv["created_at"] < cutoff:
                 to_delete.append(conv_id)
-        
+
         for conv_id in to_delete:
             del self.conversations[conv_id]
-        
+
         logger.info(f"Cleaned up {len(to_delete)} old conversations")
         return len(to_delete)
 
     def get_conversation_stats(self, conv_id: str) -> dict[str, Any]:
         """Get conversation statistics.
-        
+
         Args:
             conv_id: Conversation ID.
-            
+
         Returns:
             Dictionary with statistics.
         """
         if conv_id not in self.conversations:
             return {}
-        
+
         conv = self.conversations[conv_id]
         return conv["memory"].get_summary()

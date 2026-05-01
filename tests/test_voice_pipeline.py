@@ -26,11 +26,11 @@ class TestVoicePipeline(unittest.TestCase):
         """STT and TTS can be composed in pipeline."""
         stt = MockSpeechToText()
         tts = MockTextToSpeech()
-        
+
         input_audio = "nova test command"
         transcription = stt.transcribe(input_audio)
         response_audio = tts.synthesize(transcription)
-        
+
         self.assertEqual(transcription, input_audio)
         self.assertEqual(response_audio, input_audio)
 
@@ -38,12 +38,12 @@ class TestVoicePipeline(unittest.TestCase):
         """Full nominal pipeline flow."""
         stt = MockSpeechToText()
         tts = MockTextToSpeech()
-        
+
         # Stage 1: Capture & transcribe
         captured_audio = "nova envoie un email"
         transcription = stt.transcribe(captured_audio)
         self.assertEqual(transcription, captured_audio)
-        
+
         # Stage 2: Would process (orchestrator)
         # Stage 3: Synthesize response
         response_text = "Email envoyé avec succès"
@@ -53,7 +53,7 @@ class TestVoicePipeline(unittest.TestCase):
     def test_pipeline_with_wake_word(self) -> None:
         """Pipeline handles commands with wake words."""
         stt = MockSpeechToText()
-        
+
         input_with_wake_word = "nova quelle heure"
         transcription = stt.transcribe(input_with_wake_word)
         self.assertIn("quelle", transcription.lower())
@@ -62,10 +62,10 @@ class TestVoicePipeline(unittest.TestCase):
         """Pipeline handles empty input."""
         stt = MockSpeechToText()
         tts = MockTextToSpeech()
-        
+
         result_stt = stt.transcribe("")
         result_tts = tts.synthesize("")
-        
+
         self.assertEqual(result_stt, "")
         self.assertEqual(result_tts, "")
 
@@ -73,13 +73,13 @@ class TestVoicePipeline(unittest.TestCase):
         """Pipeline handles repeated commands."""
         stt = MockSpeechToText()
         tts = MockTextToSpeech()
-        
+
         commands = [
             "nova time",
             "nova weather",
             "nova reminder",
         ]
-        
+
         for cmd in commands:
             transcription = stt.transcribe(cmd)
             self.assertIsInstance(transcription, str)
@@ -90,11 +90,11 @@ class TestVoicePipeline(unittest.TestCase):
         """Pipeline handles special characters."""
         stt = MockSpeechToText()
         tts = MockTextToSpeech()
-        
+
         text = "nova: commande #1 (test)"
         result_stt = stt.transcribe(text)
         self.assertIsInstance(result_stt, str)
-        
+
         response = "Response (OK) - 100% success!"
         result_tts = tts.synthesize(response)
         self.assertIsInstance(result_tts, str)
@@ -110,13 +110,13 @@ class TestVoicePipeline(unittest.TestCase):
         """Pipeline maintains independence between calls."""
         stt = MockSpeechToText()
         tts = MockTextToSpeech()
-        
+
         t1 = stt.transcribe("text1")
         r1 = tts.synthesize("response1")
-        
+
         t2 = stt.transcribe("text2")
         r2 = tts.synthesize("response2")
-        
+
         # Results should be independent
         self.assertEqual(t1, "text1")
         self.assertEqual(r1, "response1")
@@ -130,11 +130,11 @@ class TestVoicePipeline(unittest.TestCase):
             FasterWhisperSpeechToText(),
         ]
         text = "test"
-        
+
         # All STTs should return strings
         for stt in stt_engines:
             self.assertIsInstance(stt.transcribe(text), str)
-        
+
         # Mock TTS works
         self.assertIsInstance(MockTextToSpeech().synthesize(text), str)
 

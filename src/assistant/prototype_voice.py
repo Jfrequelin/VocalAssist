@@ -51,7 +51,7 @@ def run_prototype_voice() -> None:
     stt = _build_stt()
     tts = _build_tts()
     session_manager = SessionManager(timeout_seconds=60)  # 1 minute inactivité pour vocal
-    
+
     print("=== Prototype vocal (pipeline STT/TTS simule) ===")
     print("Entree attendue: texte representant l'audio capture")
     print("Mode reel: ASSISTANT_VOICE_ENGINE=real et entree possible via chemin fichier audio")
@@ -118,7 +118,7 @@ def run_prototype_voice() -> None:
             f"Assistant(metrics): stt={stt_ms:.1f}ms, orchestrateur={orchestrator_ms:.1f}ms, "
             f"tts={tts_ms:.1f}ms, total={total_ms:.1f}ms"
         )
-        
+
         # Enregistrer l'activité pour étendre le timeout
         session_manager.record_activity(current_session.session_id)
 
