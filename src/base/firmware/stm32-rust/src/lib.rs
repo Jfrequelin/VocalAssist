@@ -187,6 +187,48 @@ pub enum InformativeIntent {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlIntent {
+    Light,
+    Music,
+    Reminder,
+    Agenda,
+    Restart,
+    Exit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlSlots {
+    pub room: Option<HString<32>>,
+    pub artist_or_playlist: Option<HString<64>>,
+    pub reminder_text: Option<HString<96>>,
+}
+
+impl Default for ControlSlots {
+    fn default() -> Self {
+        Self {
+            room: None,
+            artist_or_playlist: None,
+            reminder_text: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlRoute {
+    Local,
+    RemoteAssistant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlDecision {
+    pub intent: Option<ControlIntent>,
+    pub route: ControlRoute,
+    pub should_send_remote: bool,
+    pub response_tts: HString<160>,
+    pub slots: ControlSlots,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InformativeSnapshot {
     pub hour: u8,
     pub minute: u8,
@@ -321,6 +363,159 @@ pub fn detect_informative_intent(transcript: &str) -> Option<InformativeIntent> 
         return Some(InformativeIntent::Date);
     }
     None
+}
+
+pub fn detect_control_intent(transcript: &str) -> Option<ControlIntent> {
+    let normalized = normalize_ascii_lower_no_diacritics(transcript);
+    let text = normalized.as_str();
+
+    // Priority: restart > exit > light/music/reminder/agenda
+    if text.contains("restart")
+        || text.contains("redemarre")
+        || text.contains("redemarrer")
+        || text.contains("redemarrage")
+    {
+        return Some(ControlIntent::Restart);
+    }
+    if text.contains("quitte") || text.contains("exit") {
+        return Some(ControlIntent::Exit);
+    }
+    if text.contains("lumiere") || text.contains("lampe") {
+        return Some(ControlIntent::Light);
+    }
+    if text.contains("musique") || text.contains("chanson") || text.contains("play") {
+        return Some(ControlIntent::Music);
+    }
+    if text.contains("rappel") || text.contains("remember") || text.contains("memo") {
+        return Some(ControlIntent::Reminder);
+    }
+    if text.contains("agenda") || text.contains("calendrier") || text.contains("planning") {
+        return Some(ControlIntent::Agenda);
+    }
+    None
+}
+
+pub fn extract_control_slots(transcript: &str, intent: ControlIntent) -> ControlSlots {
+    let normalized = normalize_ascii_lower_no_diacritics(transcript);
+    let text = normalized.as_str();
+    let mut slots = ControlSlots::default();
+
+    match intent {
+        ControlIntent::Light => {
+            for room in ["salon", "chambre", "cuisine", "bureau"] {
+                if text.contains(room) {
+                    let mut s: HString<32> = HString::new();
+                    let _ = s.push_str(room);
+                    slots.room = Some(s);
+                    break;
+                }
+            }
+        }
+        ControlIntent::Music => {
+            if let Some(idx) = text.find("de ") {
+                let tail = text[idx + 3..].trim();
+                if !tail.is_empty() {
+                    let mut s: HString<64> = HString::new();
+                    let _ = s.push_str(tail);
+                    slots.artist_or_playlist = Some(s);
+                }
+            }
+        }
+        ControlIntent::Reminder => {
+            if let Some(idx) = text.find("rappel") {
+                let tail = text[idx + "rappel".len()..].trim();
+                if !tail.is_empty() {
+                    let mut s: HString<96> = HString::new();
+                    let _ = s.push_str(tail);
+                    slots.reminder_text = Some(s);
+                }
+            }
+        }
+        _ => {}
+    }
+
+    slots
+}
+
+pub fn handle_control_intent(
+    transcript: &str,
+    controller: &mut EdgeDeviceController,
+) -> ControlDecision {
+    if let Some(intent) = detect_control_intent(transcript) {
+        let slots = extract_control_slots(transcript, intent);
+        let mut response: HString<160> = HString::new();
+
+        match intent {
+            ControlIntent::Restart => {
+                controller.mark_error();
+                let _ = response.push_str("Redemarrage...");
+                return ControlDecision {
+                    intent: Some(intent),
+                    route: ControlRoute::Local,
+                    should_send_remote: false,
+                    response_tts: response,
+                    slots,
+                };
+            }
+            ControlIntent::Exit => {
+                controller.finish_interaction();
+                let _ = response.push_str("A bientot.");
+                return ControlDecision {
+                    intent: Some(intent),
+                    route: ControlRoute::Local,
+                    should_send_remote: false,
+                    response_tts: response,
+                    slots,
+                };
+            }
+            ControlIntent::Light => {
+                controller.mark_sending();
+                if let Some(room) = &slots.room {
+                    let _ = core::fmt::write(
+                        &mut response,
+                        format_args!("Lumiere du {} allumee.", room.as_str()),
+                    );
+                } else {
+                    let _ = response.push_str("Lumiere allumee.");
+                }
+            }
+            ControlIntent::Music => {
+                controller.mark_sending();
+                if let Some(artist) = &slots.artist_or_playlist {
+                    let _ = core::fmt::write(
+                        &mut response,
+                        format_args!("Lecture de {}.", artist.as_str()),
+                    );
+                } else {
+                    let _ = response.push_str("Lecture de votre musique.");
+                }
+            }
+            ControlIntent::Reminder => {
+                controller.mark_sending();
+                let _ = response.push_str("C'est note.");
+            }
+            ControlIntent::Agenda => {
+                controller.mark_sending();
+                let _ = response.push_str("Vous avez 3 evenements aujourd'hui.");
+            }
+        }
+
+        return ControlDecision {
+            intent: Some(intent),
+            route: ControlRoute::RemoteAssistant,
+            should_send_remote: true,
+            response_tts: response,
+            slots,
+        };
+    }
+
+    ControlDecision {
+        intent: None,
+        route: ControlRoute::Local,
+        should_send_remote: false,
+        response_tts: HString::new(),
+        slots: ControlSlots::default(),
+    }
 }
 
 /// Build a local textual response for informative intents.
@@ -932,5 +1127,73 @@ mod tests {
 
         let help = build_informative_response(InformativeIntent::SystemHelp, &snapshot);
         assert!(help.as_str().contains("mute, volume, stop media, aide"));
+    }
+
+    #[test]
+    fn test_detect_control_intents() {
+        assert_eq!(
+            detect_control_intent("allume la lumiere du salon"),
+            Some(ControlIntent::Light)
+        );
+        assert_eq!(
+            detect_control_intent("mets de la musique"),
+            Some(ControlIntent::Music)
+        );
+        assert_eq!(
+            detect_control_intent("rappel demain appeler maman"),
+            Some(ControlIntent::Reminder)
+        );
+        assert_eq!(
+            detect_control_intent("montre mon agenda"),
+            Some(ControlIntent::Agenda)
+        );
+        assert_eq!(
+            detect_control_intent("redemarre le systeme"),
+            Some(ControlIntent::Restart)
+        );
+        assert_eq!(detect_control_intent("exit"), Some(ControlIntent::Exit));
+    }
+
+    #[test]
+    fn test_extract_control_slots_light_room() {
+        let slots = extract_control_slots("allume la lumiere du salon", ControlIntent::Light);
+        assert_eq!(slots.room.as_ref().map(|s| s.as_str()), Some("salon"));
+    }
+
+    #[test]
+    fn test_handle_control_intent_routes_remote() {
+        let mut ctrl = EdgeDeviceController::new();
+        let decision = handle_control_intent("mets de la musique de daft punk", &mut ctrl);
+
+        assert_eq!(decision.intent, Some(ControlIntent::Music));
+        assert_eq!(decision.route, ControlRoute::RemoteAssistant);
+        assert!(decision.should_send_remote);
+        assert_eq!(ctrl.state().led_state, BaseState::Sending);
+    }
+
+    #[test]
+    fn test_handle_control_restart_local_safeguard() {
+        let mut ctrl = EdgeDeviceController::new();
+        let decision = handle_control_intent("redemarre", &mut ctrl);
+
+        assert_eq!(decision.intent, Some(ControlIntent::Restart));
+        assert_eq!(decision.route, ControlRoute::Local);
+        assert!(!decision.should_send_remote);
+        assert_eq!(ctrl.state().led_state, BaseState::Error);
+        assert_eq!(decision.response_tts.as_str(), "Redemarrage...");
+    }
+
+    #[test]
+    fn test_handle_control_exit_cleanup() {
+        let mut ctrl = EdgeDeviceController::new();
+        ctrl.start_interaction();
+        let decision = handle_control_intent("quitte", &mut ctrl);
+
+        assert_eq!(decision.intent, Some(ControlIntent::Exit));
+        assert_eq!(decision.route, ControlRoute::Local);
+        assert!(!decision.should_send_remote);
+        assert_eq!(ctrl.state().interaction_active, false);
+        assert_eq!(ctrl.state().led_state, BaseState::Idle);
+        assert_eq!(decision.response_tts.as_str(), "A bientot.");
     }
 }
