@@ -1769,6 +1769,26 @@ mod tests {
     }
 
     #[test]
+    fn test_config_validation_ok_and_nok() {
+        let ok = Config::new("nova");
+        assert!(ok.validate().is_ok());
+
+        let nok = Config::new("");
+        assert!(nok.validate().is_err());
+    }
+
+    #[test]
+    fn test_wake_word_without_command_is_rejected() {
+        let mut config = Config::new("nova");
+        config.min_voice_chars = 1;
+        let mut runtime = Runtime::new(&config);
+
+        let decision = process_transcript(&mut runtime, &config, "nova   ");
+        assert!(!decision.should_send);
+        assert_eq!(decision.result, BaseResult::WakeWordWithoutCommand);
+    }
+
+    #[test]
     fn test_device_controller_transitions() {
         let mut ctrl = EdgeDeviceController::new();
 
@@ -1969,6 +1989,7 @@ mod tests {
             detect_informative_intent("aide système"),
             Some(InformativeIntent::SystemHelp)
         );
+        assert_eq!(detect_informative_intent("ouvre la baie vitree"), None);
     }
 
     #[test]
@@ -2048,6 +2069,17 @@ mod tests {
         assert!(!decision.should_send_remote);
         assert_eq!(ctrl.state().led_state, BaseState::Error);
         assert_eq!(decision.response_tts.as_str(), "Redemarrage...");
+    }
+
+    #[test]
+    fn test_handle_control_intent_unknown_stays_local_nok() {
+        let mut ctrl = EdgeDeviceController::new();
+        let decision = handle_control_intent("ouvre les volets", &mut ctrl);
+
+        assert_eq!(decision.intent, None);
+        assert_eq!(decision.route, ControlRoute::Local);
+        assert!(!decision.should_send_remote);
+        assert!(decision.response_tts.is_empty());
     }
 
     #[test]
@@ -2146,6 +2178,22 @@ mod tests {
         assert_eq!(playback_ok.queue_len(), 1);
     }
 
+    #[test]
+    fn test_speak_response_playback_queue_full_returns_playback_error() {
+        let mut ctrl = EdgeDeviceController::new();
+        let mut playback = AudioPlayback::default();
+        let mut tts = PiperTtsEngine::new("fr");
+        tts.load_model();
+
+        // Saturate queue to force enqueue_tts failure.
+        for _ in 0..16 {
+            assert!(playback.enqueue_beep().is_ok());
+        }
+
+        let result = speak_response_local(&mut ctrl, &mut tts, &mut playback, "bonjour");
+        assert_eq!(result, Err(SpeakError::Playback(PlaybackError::QueueFull)));
+    }
+
     // ─── MACRO-012: WiFi / Network ─────────────────────────────────────────
 
     #[test]
@@ -2222,6 +2270,15 @@ mod tests {
     }
 
     #[test]
+    fn test_stream_sync_duplicate_packet_nok_path() {
+        let mut sync = StreamSyncState::default();
+        assert_eq!(sync.accept_packet(50, false), StreamSyncOutcome::InOrder);
+        assert_eq!(sync.accept_packet(51, false), StreamSyncOutcome::InOrder);
+        assert_eq!(sync.accept_packet(51, false), StreamSyncOutcome::Duplicate);
+        assert_eq!(sync.duplicate_packets, 1);
+    }
+
+    #[test]
     fn test_backpressure_controller_thresholds() {
         let mut bp = BackpressureController::new(10, 6);
         assert_eq!(bp.evaluate(2), BackpressureAction::Normal);
@@ -2245,6 +2302,17 @@ mod tests {
         assert_eq!(metrics.lost_packets, 2);
         assert_eq!(metrics.packet_loss_percent(), 10);
         assert!(metrics.jitter_ms > 0);
+    }
+
+    #[test]
+    fn test_stream_transport_metrics_packet_loss_bounds() {
+        let mut metrics = StreamTransportMetrics::default();
+        assert_eq!(metrics.packet_loss_percent(), 0); // no packets yet
+
+        metrics.record_packet();
+        metrics.record_packet();
+        metrics.record_loss(10); // intentionally above total
+        assert_eq!(metrics.packet_loss_percent(), 100); // saturated at 100%
     }
 
     // ─── MACRO-012: PendingCommandQueue ────────────────────────────────────
@@ -2294,6 +2362,10 @@ mod tests {
         assert!(HttpOutcome::Unreachable.is_retryable());
         assert!(HttpOutcome::ServerError { status: 500 }.is_retryable());
         assert!(!HttpOutcome::ClientError { status: 400 }.is_retryable());
+        assert_eq!(
+            HttpOutcome::from_status(302),
+            HttpOutcome::ClientError { status: 302 }
+        );
     }
 
     // ─── MACRO-012: PersistedState / EEPROM ─────────────────────────────────
