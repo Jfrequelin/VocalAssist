@@ -65,3 +65,6 @@ htmlcov/
 
 # Project specific
 *.log
+
+# Rust / Embedded build artifacts
+**/target/
