@@ -117,7 +117,7 @@ python3 scripts/sync_tickets.py --help
 → Assurez-vous d'être à la racine du repo: `cd VocalAssist`
 
 ### "python3: command not found"
-→ Installer Python 3.9+ (macOS: `brew install python3`, Ubuntu: `apt install python3`)
+→ Installer Python 3.10+ (macOS: `brew install python3`, Ubuntu: `apt install python3`)
 
 ## 📌 Bonnes pratiques
 
