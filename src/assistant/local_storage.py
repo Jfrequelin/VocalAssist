@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Any, Optional, Literal, cast
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ class LocalReminder:
     priority: Literal["low", "medium", "high"] = "medium"
     description: str = ""
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert reminder to dictionary for serialization."""
         return {
             "id": self.id,
@@ -41,15 +41,20 @@ class LocalReminder:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> LocalReminder:
+    def from_dict(cls, data: dict[str, Any]) -> LocalReminder:
         """Create reminder from dictionary."""
+        priority_raw = str(data.get("priority", "medium"))
+        priority: Literal["low", "medium", "high"] = "medium"
+        if priority_raw in {"low", "medium", "high"}:
+            priority = cast(Literal["low", "medium", "high"], priority_raw)
+
         return cls(
             id=data["id"],
             title=data["title"],
             created_at=datetime.fromisoformat(data["created_at"]),
             due_date=datetime.fromisoformat(data["due_date"]) if data.get("due_date") else None,
             completed=data.get("completed", False),
-            priority=data.get("priority", "medium"),
+            priority=priority,
             description=data.get("description", ""),
         )
 
@@ -63,10 +68,10 @@ class LocalNote:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=datetime.now)
     modified_at: datetime = field(default_factory=datetime.now)
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=lambda: cast(list[str], []))
     archived: bool = False
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert note to dictionary for serialization."""
         return {
             "id": self.id,
@@ -79,7 +84,7 @@ class LocalNote:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> LocalNote:
+    def from_dict(cls, data: dict[str, Any]) -> LocalNote:
         """Create note from dictionary."""
         return cls(
             id=data["id"],
@@ -87,7 +92,7 @@ class LocalNote:
             content=data["content"],
             created_at=datetime.fromisoformat(data["created_at"]),
             modified_at=datetime.fromisoformat(data["modified_at"]),
-            tags=data.get("tags", []),
+            tags=cast(list[str], data.get("tags", [])),
             archived=data.get("archived", False),
         )
 

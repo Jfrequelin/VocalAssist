@@ -5,9 +5,8 @@ Tests resilience strategies for external service failures.
 
 from __future__ import annotations
 
+import time
 import unittest
-from enum import Enum
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from src.assistant.resilience import (
@@ -242,8 +241,6 @@ class TestResilienceManager(unittest.TestCase):
 
     def test_execute_with_resilience(self) -> None:
         """Test executing operation with resilience."""
-        results = []
-        
         def successful_op() -> str:
             return "success"
         
@@ -278,7 +275,7 @@ class TestResilienceManager(unittest.TestCase):
         for _ in range(2):
             try:
                 self.manager.execute("leon", failing_op)
-            except:
+            except Exception:
                 pass
         
         # Third call should be blocked (circuit open)
@@ -309,7 +306,7 @@ class TestResilienceManager(unittest.TestCase):
         # This test shows timeout behavior (actual timeout depends on OS/threading)
         # For now, test that the method exists and doesn't crash
         try:
-            result = self.manager.execute_with_timeout("slow", slow_op, timeout=0.1)
+            _result = self.manager.execute_with_timeout("slow", slow_op, timeout=0.1)
             # Result could be None or the value depending on timing
             self.assertIsNotNone(self.manager)
         except Exception:
@@ -323,7 +320,7 @@ class TestResilienceManager(unittest.TestCase):
                 if i < 3:
                     raise Exception("Fail")
                 self.manager.execute("test", lambda: "success")
-            except:
+            except Exception:
                 pass
         
         stats = self.manager.get_resilience_stats()

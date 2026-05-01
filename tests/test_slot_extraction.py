@@ -6,8 +6,13 @@ Tests generic slot extraction from user input based on slot definitions.
 from __future__ import annotations
 
 import unittest
+from typing import Any
 
 from src.assistant.intents_v2 import SlotExtractor, SlotType
+
+
+SlotConfig = dict[str, Any]
+SlotDefinitions = dict[str, SlotConfig]
 
 
 class TestSlotExtraction(unittest.TestCase):
@@ -20,7 +25,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test extracting ENUM slot with exact keyword match."""
         text = "allume la lumiere du salon"
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "room": {"type": SlotType.ENUM, "values": ["salon", "chambre", "cuisine", "bureau"]},
         }
         
@@ -33,7 +38,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test extracting ENUM slot when value not in list."""
         text = "allume la lumiere du grenier"
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "room": {"type": SlotType.ENUM, "values": ["salon", "chambre", "cuisine", "bureau"]},
         }
         
@@ -46,7 +51,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test extracting NUMERIC slot with integer."""
         text = "regle la lumiere a 75 pourcent"
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "brightness": {"type": SlotType.NUMERIC, "min": 0, "max": 100},
         }
         
@@ -59,7 +64,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test that numeric slots are validated against range."""
         text = "temperature 50 degres"  # Invalid: > 30
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "value": {"type": SlotType.NUMERIC, "min": 10, "max": 30},
         }
         
@@ -72,7 +77,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test extracting STRING slot with simple extraction."""
         text = "cherche python programming"
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "query": {"type": SlotType.STRING},
         }
         
@@ -86,7 +91,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test extracting multiple slots from one command."""
         text = "allume la lumiere du salon a 80 pourcent"
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "room": {"type": SlotType.ENUM, "values": ["salon", "chambre", "cuisine", "bureau"]},
             "brightness": {"type": SlotType.NUMERIC, "min": 0, "max": 100},
         }
@@ -101,7 +106,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test that extraction is case-insensitive."""
         text = "ALLUME la LUMIERE du SALON"
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "room": {"type": SlotType.ENUM, "values": ["salon", "chambre", "cuisine", "bureau"]},
         }
         
@@ -114,7 +119,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test that extraction handles accents correctly."""
         text = "allume la lumière du salon"
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "room": {"type": SlotType.ENUM, "values": ["salon", "chambre", "cuisine", "bureau"]},
         }
         
@@ -127,7 +132,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test ENUM slot extraction with multi-word enum values."""
         text = "je veux de la musique rock"
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "genre": {"type": SlotType.ENUM, "values": ["rock", "jazz", "pop classique", "electro"]},
         }
         
@@ -140,7 +145,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test numeric extraction when number has text suffix."""
         text = "minuteur 5 minutes"
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "duration": {"type": SlotType.NUMERIC, "min": 1, "max": 3600},
         }
         
@@ -153,7 +158,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test validation of required slots."""
         text = "eteins la lumiere"
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "state": {"type": SlotType.ENUM, "values": ["on", "off"], "required": True},
         }
         
@@ -166,7 +171,7 @@ class TestSlotExtraction(unittest.TestCase):
         """Test that partial slot extraction doesn't fail entire command."""
         text = "allume la lumiere"  # No room mentioned
         
-        slots_def = {
+        slots_def: SlotDefinitions = {
             "room": {"type": SlotType.ENUM, "values": ["salon", "chambre", "cuisine", "bureau"]},
             "state": {"type": SlotType.ENUM, "values": ["on", "off"]},
         }
@@ -188,7 +193,7 @@ class TestSlotExtractionIntegration(unittest.TestCase):
         """Test extracting light command with all available slots."""
         text = "allume la lumiere du salon a 75 pourcent brightness"
         
-        light_slots = {
+        light_slots: SlotDefinitions = {
             "room": {"type": SlotType.ENUM, "values": ["salon", "chambre", "cuisine", "bureau"]},
             "brightness": {"type": SlotType.NUMERIC, "min": 0, "max": 100},
         }
@@ -202,7 +207,7 @@ class TestSlotExtractionIntegration(unittest.TestCase):
         """Test extracting city from weather command."""
         text = "quelle est la meteo a paris"
         
-        weather_slots = {
+        weather_slots: SlotDefinitions = {
             "city": {"type": SlotType.STRING},
         }
         
@@ -215,7 +220,7 @@ class TestSlotExtractionIntegration(unittest.TestCase):
         """Test extracting temperature value."""
         text = "regle le thermostat a 21 degres"
         
-        temp_slots = {
+        temp_slots: SlotDefinitions = {
             "value": {"type": SlotType.NUMERIC, "min": 10, "max": 30},
         }
         

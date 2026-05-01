@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta
-from time import time
 
 from src.assistant.session_manager import SessionManager, SessionState
 
@@ -34,7 +32,7 @@ class TestSessionManager(unittest.TestCase):
         self.assertTrue(manager.is_session_active(session_id))
 
         resumed = manager.resume_session(session_id)
-        self.assertIsNotNone(resumed)
+        assert resumed is not None
         self.assertEqual(resumed.state, SessionState.ACTIVE)
 
     def test_session_cannot_resume_after_expiry(self) -> None:

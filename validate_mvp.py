@@ -30,13 +30,13 @@ def run_command(cmd: str, description: str) -> bool:
             timeout=60
         )
         if result.returncode == 0:
-            print(f"   ✅ PASS")
+            print("   ✅ PASS")
             return True
         else:
             print(f"   ❌ FAIL: {result.stderr}")
             return False
     except subprocess.TimeoutExpired:
-        print(f"   ❌ TIMEOUT")
+        print("   ❌ TIMEOUT")
         return False
     except Exception as e:
         print(f"   ❌ ERROR: {e}")
@@ -50,7 +50,7 @@ def main() -> int:
     print("MVP COMPLETION VALIDATION")
     print("=" * 70)
     
-    checks = []
+    checks: list[bool] = []
     
     # 1. Test Suite
     checks.append(run_command(

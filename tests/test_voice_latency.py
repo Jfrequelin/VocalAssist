@@ -11,9 +11,7 @@ Coverage:
 
 import unittest
 import tempfile
-from pathlib import Path
 from time import perf_counter
-from unittest.mock import Mock, patch, MagicMock
 
 from src.assistant.voice_pipeline import (
     MockSpeechToText,
@@ -34,7 +32,7 @@ class TestSTTLatency(unittest.TestCase):
     def test_mock_stt_latency_minimal(self):
         """Mock STT has minimal latency."""
         iterations = 100
-        times = []
+        times: list[float] = []
         
         for _ in range(iterations):
             start = perf_counter()
@@ -49,7 +47,7 @@ class TestSTTLatency(unittest.TestCase):
     def test_real_stt_latency_with_text_fallback(self):
         """Real STT with text fallback is fast."""
         iterations = 10
-        times = []
+        times: list[float] = []
         
         for _ in range(iterations):
             start = perf_counter()
@@ -96,7 +94,7 @@ class TestTTSLatency(unittest.TestCase):
     def test_mock_tts_latency_minimal(self):
         """Mock TTS has minimal latency."""
         iterations = 100
-        times = []
+        times: list[float] = []
         
         for _ in range(iterations):
             start = perf_counter()
@@ -158,12 +156,12 @@ class TestPipelineLatency(unittest.TestCase):
 
     def test_pipeline_latency_repeated(self):
         """Pipeline latency across repeated calls."""
-        times = []
+        times: list[float] = []
         
         for i in range(20):
             start = perf_counter()
-            t = self.stt.transcribe(f"command {i}")
-            r = self.tts.synthesize(f"response {i}")
+            self.stt.transcribe(f"command {i}")
+            self.tts.synthesize(f"response {i}")
             elapsed = perf_counter() - start
             times.append(elapsed)
         
@@ -352,7 +350,7 @@ class TestEndToEndErrorCases(unittest.TestCase):
     def test_e2e_rapid_sequential_commands(self):
         """E2E: rapid sequential commands don't interfere."""
         commands = [f"cmd{i}" for i in range(10)]
-        results = []
+        results: list[tuple[str, str]] = []
         
         for cmd in commands:
             stt_out = self.stt.transcribe(cmd)

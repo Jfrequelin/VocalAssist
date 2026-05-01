@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta
+from typing import Literal
 
 from src.assistant.local_storage import LocalNote, LocalReminder, ReminderStore
 
@@ -46,7 +47,7 @@ class TestLocalReminder(unittest.TestCase):
 
     def test_reminder_priority_values(self) -> None:
         """Test valid priority values."""
-        valid_priorities = ["low", "medium", "high"]
+        valid_priorities: list[Literal["low", "medium", "high"]] = ["low", "medium", "high"]
         
         for priority in valid_priorities:
             reminder = LocalReminder(title="Test", priority=priority)
@@ -78,7 +79,6 @@ class TestLocalNote(unittest.TestCase):
     def test_note_modification_timestamp(self) -> None:
         """Test that modification timestamp updates."""
         note = LocalNote(title="Test", content="Original")
-        original_modified = note.modified_at
         
         # Modify content
         note.content = "Updated"
@@ -108,6 +108,7 @@ class TestReminderStore(unittest.TestCase):
         
         retrieved = self.store.get_reminder(reminder.id)
         self.assertIsNotNone(retrieved)
+        assert retrieved is not None
         self.assertEqual(retrieved.title, "Buy milk")
 
     def test_list_all_reminders(self) -> None:
@@ -145,6 +146,7 @@ class TestReminderStore(unittest.TestCase):
         self.store.update_reminder(reminder)
         
         retrieved = self.store.get_reminder(reminder.id)
+        assert retrieved is not None
         self.assertEqual(retrieved.title, "Updated")
 
     def test_delete_reminder(self) -> None:
@@ -195,6 +197,7 @@ class TestNoteStore(unittest.TestCase):
         
         retrieved = self.store.get_note(note.id)
         self.assertIsNotNone(retrieved)
+        assert retrieved is not None
         self.assertEqual(retrieved.content, "Milk, bread, eggs")
 
     def test_search_notes_by_title(self) -> None:

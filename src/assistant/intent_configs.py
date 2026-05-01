@@ -133,11 +133,6 @@ def _settings_response(slots: dict[str, Any]) -> str:
     return f"Parametres: {setting} modifie."
 
 
-def _generic_response(slots: dict[str, Any]) -> str:
-    """Generic response for simple intents."""
-    return "Demande enregistree."
-
-
 def create_default_registry() -> IntentRegistry:
     """Create and configure the default intent registry."""
     registry = IntentRegistry()

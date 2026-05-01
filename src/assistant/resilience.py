@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Optional, Type
 import logging
@@ -171,7 +172,7 @@ class CircuitBreaker:
         self.last_state_change = datetime.now()
         logger.info("Circuit breaker reset")
 
-    def get_metrics(self) -> dict:
+    def get_metrics(self) -> dict[str, Any]:
         """Get circuit breaker metrics.
         
         Returns:
@@ -267,7 +268,7 @@ class ResilienceManager:
             if breaker:
                 breaker.call_succeeded()
             return result
-        except Exception as e:
+        except Exception:
             if breaker:
                 breaker.call_failed()
             raise
@@ -357,19 +358,13 @@ class ResilienceManager:
         Returns:
             Operation result or None on timeout.
         """
-        import signal
-        
-        def _timeout_handler(signum, frame):
-            raise TimeoutError(f"Operation timed out after {timeout}s")
-        
-        # Simple timeout using sleep (not signal-based for portability)
-        start = time.time()
-        try:
-            result = self.execute(service_name, operation)
-            return result
-        except TimeoutError:
-            logger.warning(f"Operation timed out: {service_name}")
-            return None
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self.execute, service_name, operation)
+            try:
+                return future.result(timeout=timeout)
+            except FutureTimeoutError:
+                logger.warning(f"Operation timed out: {service_name}")
+                return None
 
     def record_execution_time(self, service_name: str, duration: float) -> None:
         """Record execution time for adaptive timeout.
@@ -411,7 +406,7 @@ class ResilienceManager:
         """Internal method to record execution time."""
         self.record_execution_time(service_name, duration)
 
-    def get_resilience_stats(self) -> dict:
+    def get_resilience_stats(self) -> dict[str, Any]:
         """Get resilience statistics.
         
         Returns:
@@ -421,7 +416,7 @@ class ResilienceManager:
         total_success = 0
         total_failure = 0
         
-        breaker_states = {}
+        breaker_states: dict[str, str] = {}
         for name, breaker in self.breakers.items():
             metrics = breaker.get_metrics()
             total_ops += metrics["total_calls"]

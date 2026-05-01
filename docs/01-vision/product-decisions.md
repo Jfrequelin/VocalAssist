@@ -11,9 +11,36 @@
 ## Materiel retenu v1
 
 Edge:
-- module ESP32-S3 avec haut-parleur integre.
+- module cible: Waveshare ESP32-S3-Touch-LCD-1.85C-BOX-EN.
+- ecran LCD tactile 1.85" (360x360) disponible pour HMI locale.
+- audio embarque (micro + sortie haut-parleur) pour capture et restitution locales.
 - bouton mute materiel obligatoire.
 - LED d'etat recommandee.
+- batterie rechargeable, RTC et slot TF disponibles pour evolutions produit.
+
+## Fonctionnalites accessibles avec le hardware retenu
+
+Disponibles materiellement:
+- affichage local des etats edge (idle, listening, thinking, speaking, error, muted),
+- interaction tactile minimale (mute/stop/navigation simple),
+- capture vocale locale,
+- restitution audio locale,
+- connectivite Wi-Fi/BLE,
+- fonctionnement sur batterie,
+- horodatage local via RTC,
+- stockage auxiliaire via TF.
+
+Disponibles dans le depot actuel (simulation/proto):
+- wake word local,
+- VAD minimal,
+- envoi audio edge vers backend,
+- restitution TTS locale,
+- etats LED/mute/bouton,
+- mode degrade + reconnexion simple.
+
+Non encore integrees dans ce depot:
+- pipeline ecran/tactile complet,
+- gestion produit batterie/RTC/TF.
 
 Serveur:
 - machine Linux locale (mini PC/NUC ou equivalent).

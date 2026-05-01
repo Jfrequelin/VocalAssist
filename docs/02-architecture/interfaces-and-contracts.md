@@ -11,6 +11,12 @@ Champs minimaux:
 - metadata (langue, confidence)
 - context (room, mode_degrade)
 
+Champs recommandes avec le hardware cible:
+- edge_status (muted, listening, speaking, error)
+- battery (percent, charging)
+- network (wifi_rssi, connected)
+- ui_capabilities (screen=true, touch=true)
+
 ## Contrat Serveur -> Edge (reponse)
 
 Champs minimaux:
@@ -19,6 +25,10 @@ Champs minimaux:
 - answer_text
 - action optionnelle
 - policy (retry/cache/confirmation)
+
+Champs recommandes avec le hardware cible:
+- ui_state (idle|listening|thinking|speaking|error|muted)
+- ui_hint (notification courte pour ecran/tactile)
 
 ## Contrat lecture audio locale
 
@@ -33,6 +43,11 @@ Controles locaux obligatoires:
 - pause
 - resume
 - volume +/-
+
+Controles locaux rendus accessibles par le hardware:
+- mute via bouton physique et tactile
+- validation/annulation simple via tactile
+- affichage statut local (audio/screen/network/battery)
 
 ## Contrat commandes parametrees
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timedelta
-from enum import Enum
 
 from src.assistant.retention_policy import (
     RetentionPolicy,
@@ -126,6 +125,7 @@ class TestDataRetentionManager(unittest.TestCase):
         self.assertTrue(archived)
         
         info = self.manager.get_retention_info(data_id)
+        assert info is not None
         self.assertTrue(info["archived"])
 
     def test_cannot_archive_non_archivable(self) -> None:
@@ -169,6 +169,7 @@ class TestDataRetentionManager(unittest.TestCase):
         
         # Artificially age the data
         retention_info = self.manager.get_retention_info(data_id)
+        assert retention_info is not None
         retention_info["created_at"] = datetime.now() - timedelta(days=10)
         
         # Run cleanup with archive
@@ -187,7 +188,9 @@ class TestDataRetentionManager(unittest.TestCase):
         
         reminders_policy_retrieved = self.manager.get_policy_for_type("reminders")
         notes_policy_retrieved = self.manager.get_policy_for_type("notes")
-        
+
+        assert reminders_policy_retrieved is not None
+        assert notes_policy_retrieved is not None
         self.assertEqual(reminders_policy_retrieved.level, RetentionLevel.LONG_TERM)
         self.assertEqual(notes_policy_retrieved.level, RetentionLevel.MEDIUM_TERM)
 
@@ -211,8 +214,8 @@ class TestDataRetentionManager(unittest.TestCase):
         data_id = self.manager.register_data("meetings", policy)
         
         exported = self.manager.export_data(data_id)
-        
-        self.assertIsNotNone(exported)
+
+        assert exported is not None
         self.assertIn("id", exported)
         self.assertIn("data_type", exported)
 
@@ -266,7 +269,7 @@ class TestRetentionIntegration(unittest.TestCase):
             ("long", RetentionLevel.LONG_TERM),
         ]
         
-        data_ids = []
+        data_ids: list[str] = []
         for data_type, level in policies:
             policy = RetentionPolicy(level=level)
             data_id = self.manager.register_data(data_type, policy)

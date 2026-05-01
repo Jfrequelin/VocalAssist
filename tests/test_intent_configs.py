@@ -28,7 +28,7 @@ class TestDefaultIntentRegistry(unittest.TestCase):
     def test_light_intent_has_required_slots(self) -> None:
         """Test that light intent has room and state slots."""
         light = self.registry.get("light")
-        self.assertIsNotNone(light)
+        assert light is not None
         self.assertIn("slots", light)
         self.assertIn("room", light["slots"])
         self.assertIn("state", light["slots"])
@@ -40,14 +40,14 @@ class TestDefaultIntentRegistry(unittest.TestCase):
     def test_weather_has_city_slot(self) -> None:
         """Test that weather intent has city slot."""
         weather = self.registry.get("weather")
-        self.assertIsNotNone(weather)
+        assert weather is not None
         self.assertIn("city", weather["slots"])
         self.assertEqual(weather["slots"]["city"].slot_type, SlotType.STRING)
 
     def test_temperature_has_numeric_slot(self) -> None:
         """Test that temperature intent has numeric value slot."""
         temp = self.registry.get("temperature")
-        self.assertIsNotNone(temp)
+        assert temp is not None
         self.assertIn("value", temp["slots"])
         self.assertEqual(temp["slots"]["value"].slot_type, SlotType.NUMERIC)
         self.assertEqual(temp["slots"]["value"].min_value, 10)
@@ -56,7 +56,7 @@ class TestDefaultIntentRegistry(unittest.TestCase):
     def test_music_intent_has_multiple_slots(self) -> None:
         """Test that music intent has action, genre, and volume slots."""
         music = self.registry.get("music")
-        self.assertIsNotNone(music)
+        assert music is not None
         
         for slot_name in ["action", "genre", "volume"]:
             self.assertIn(slot_name, music["slots"])
@@ -114,6 +114,7 @@ class TestSlotExtraction(unittest.TestCase):
         # This test documents the slot extraction feature
         # Implementation would use regex patterns defined in slot_definition
         light_intent = self.registry.get("light")
+        assert light_intent is not None
         room_slot = light_intent["slots"]["room"]
         
         # Room slot should enumerate valid rooms
@@ -125,6 +126,7 @@ class TestSlotExtraction(unittest.TestCase):
     def test_temperature_range_validation(self) -> None:
         """Test that temperature values have valid range."""
         temp_intent = self.registry.get("temperature")
+        assert temp_intent is not None
         value_slot = temp_intent["slots"]["value"]
         
         self.assertEqual(value_slot.min_value, 10)

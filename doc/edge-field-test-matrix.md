@@ -3,11 +3,16 @@
 ## Objectif
 Valider en conditions réelles le comportement du satellite edge sur les scénarios critiques réseau et acoustiques.
 
+## Référence matériel
+- Carte cible: Waveshare ESP32-S3-Touch-LCD-1.85C-BOX-EN
+- Fiche d'integration hardware/wiki: [doc/waveshare-esp32-s3-touch-lcd-1.85c.md](waveshare-esp32-s3-touch-lcd-1.85c.md)
+
 ## Hypothèses de test
 - Device cible: ESP32-S3 (ou émulateur edge équivalent)
 - Backend edge: endpoint POST /edge/audio
 - Wake word: `nova`
 - VAD local: heuristique minimale active côté edge
+- Ecran et tactile disponibles sur la carte cible, meme si le support logiciel complet reste a ajouter dans ce depot
 
 ## Cas de test
 

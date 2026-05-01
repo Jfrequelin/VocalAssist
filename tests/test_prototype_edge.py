@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any
 from unittest.mock import patch
 
 from src.assistant.edge_device import EdgeDeviceController
-from src.assistant.prototype_edge import _handle_control_command, _process_audio_segment
+from src.assistant.prototype_edge import _handle_control_command, _process_audio_segment  # pyright: ignore[reportPrivateUsage]
 from src.assistant.voice_pipeline import MockTextToSpeech
 
 
@@ -50,7 +51,7 @@ class TestPrototypeEdgeProcessAudioSegment(unittest.TestCase):
 
     @patch("src.assistant.prototype_edge.send_edge_audio_payload")
     @patch("src.assistant.prototype_edge.build_edge_audio_payload")
-    def test_process_audio_segment_speaks_when_unmuted(self, mock_build, mock_send) -> None:
+    def test_process_audio_segment_speaks_when_unmuted(self, mock_build: Any, mock_send: Any) -> None:
         mock_build.return_value = object()
         mock_send.return_value = {"correlation_id": "cid-1", "received_bytes": 12}
 
@@ -73,7 +74,7 @@ class TestPrototypeEdgeProcessAudioSegment(unittest.TestCase):
 
     @patch("src.assistant.prototype_edge.send_edge_audio_payload")
     @patch("src.assistant.prototype_edge.build_edge_audio_payload")
-    def test_process_audio_segment_respects_mute(self, mock_build, mock_send) -> None:
+    def test_process_audio_segment_respects_mute(self, mock_build: Any, mock_send: Any) -> None:
         mock_build.return_value = object()
         mock_send.return_value = {"correlation_id": "cid-2", "received_bytes": 10}
         self.controller.set_mute(True)
@@ -94,7 +95,7 @@ class TestPrototypeEdgeProcessAudioSegment(unittest.TestCase):
         self.assertIn("Edge(TTS): muet, restitution audio supprimee", printed)
 
     @patch("src.assistant.prototype_edge.send_edge_audio_payload")
-    def test_process_audio_segment_backend_failure_sets_error_state(self, mock_send) -> None:
+    def test_process_audio_segment_backend_failure_sets_error_state(self, mock_send: Any) -> None:
         mock_send.return_value = None
 
         with patch("builtins.print") as mock_print:
@@ -115,7 +116,7 @@ class TestPrototypeEdgeProcessAudioSegment(unittest.TestCase):
 
     @patch("src.assistant.prototype_edge.send_edge_audio_payload")
     @patch("src.assistant.prototype_edge.build_edge_audio_payload")
-    def test_process_audio_segment_ignores_non_activated_input(self, mock_build, mock_send) -> None:
+    def test_process_audio_segment_ignores_non_activated_input(self, mock_build: Any, mock_send: Any) -> None:
         with patch("builtins.print") as mock_print:
             _process_audio_segment(
                 raw="bruit ambiant",

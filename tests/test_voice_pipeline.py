@@ -7,6 +7,7 @@ from src.assistant.voice_pipeline import (
     MockSpeechToText,
     MockTextToSpeech,
     PiperTextToSpeech,
+    SpeechToTextEngine,
 )
 
 
@@ -52,7 +53,6 @@ class TestVoicePipeline(unittest.TestCase):
     def test_pipeline_with_wake_word(self) -> None:
         """Pipeline handles commands with wake words."""
         stt = MockSpeechToText()
-        tts = MockTextToSpeech()
         
         input_with_wake_word = "nova quelle heure"
         transcription = stt.transcribe(input_with_wake_word)
@@ -125,21 +125,19 @@ class TestVoicePipeline(unittest.TestCase):
 
     def test_pipeline_component_substitution(self) -> None:
         """Pipeline works with different implementations."""
-        # Mock implementations
-        stt_mock = MockSpeechToText()
-        tts_mock = MockTextToSpeech()
-        
-        # Real STT implementation
-        stt_real = FasterWhisperSpeechToText()
-        
+        stt_engines: list[SpeechToTextEngine] = [
+            MockSpeechToText(),
+            FasterWhisperSpeechToText(),
+        ]
         text = "test"
         
         # All STTs should return strings
-        for stt in [stt_mock, stt_real]:
+        for stt in stt_engines:
             self.assertIsInstance(stt.transcribe(text), str)
         
         # Mock TTS works
-        self.assertIsInstance(tts_mock.synthesize(text), str)
+        self.assertIsInstance(MockTextToSpeech().synthesize(text), str)
+
     def test_real_stt_passthrough_for_non_file_input(self) -> None:
         stt = FasterWhisperSpeechToText(model_size="small", language="fr")
         self.assertEqual(stt.transcribe("texte deja transcrit"), "texte deja transcrit")

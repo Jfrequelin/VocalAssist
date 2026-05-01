@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class RetentionInfo:
     created_at: datetime
     archived: bool = False
     archived_at: Optional[datetime] = None
-    retention_policy: dict = field(default_factory=dict)
+    retention_policy: dict[str, Any] = field(default_factory=lambda: {})
 
 
 class DataRetentionManager:
@@ -145,7 +145,7 @@ class DataRetentionManager:
         self.data_registry[data_id] = info
         return data_id
 
-    def get_retention_info(self, data_id: str) -> Optional[dict]:
+    def get_retention_info(self, data_id: str) -> Optional[dict[str, Any]]:
         """Get retention information for data.
         
         Args:
@@ -187,18 +187,20 @@ class DataRetentionManager:
         """
         return self.type_policies.get(data_type)
 
-    def find_expired_data(self) -> list[dict]:
+    def find_expired_data(self) -> list[dict[str, Any]]:
         """Find all expired data.
         
         Returns:
             List of expired data info dicts.
         """
-        expired = []
+        expired: list[dict[str, Any]] = []
         
         for data_id, info in self.data_registry.items():
             policy = self._get_policy_for_info(info)
             if policy.is_expired(info.created_at):
-                expired.append(self.get_retention_info(data_id))
+                data_info = self.get_retention_info(data_id)
+                if data_info is not None:
+                    expired.append(data_info)
         
         return expired
 
@@ -237,14 +239,14 @@ class DataRetentionManager:
             return True
         return False
 
-    def cleanup_expired_data(self) -> list[dict]:
+    def cleanup_expired_data(self) -> list[dict[str, Any]]:
         """Clean up expired data by deletion.
         
         Returns:
             List of deleted data info.
         """
         expired = self.find_expired_data()
-        deleted = []
+        deleted: list[dict[str, Any]] = []
         
         for data_info in expired:
             self.delete_data(data_info["id"])
@@ -253,15 +255,15 @@ class DataRetentionManager:
         logger.info(f"Cleaned up {len(deleted)} expired data items")
         return deleted
 
-    def cleanup_with_archival(self) -> dict:
+    def cleanup_with_archival(self) -> dict[str, list[dict[str, Any]]]:
         """Clean up expired data, archiving what can be archived.
         
         Returns:
             Dictionary with 'archived' and 'deleted' lists.
         """
         expired = self.find_expired_data()
-        archived = []
-        deleted = []
+        archived: list[dict[str, Any]] = []
+        deleted: list[dict[str, Any]] = []
         
         for data_info in expired:
             data_id = data_info["id"]
@@ -277,7 +279,7 @@ class DataRetentionManager:
             "deleted": deleted,
         }
 
-    def export_data(self, data_id: str) -> Optional[dict]:
+    def export_data(self, data_id: str) -> Optional[dict[str, Any]]:
         """Export data before deletion.
         
         Args:
@@ -296,7 +298,7 @@ class DataRetentionManager:
         
         return self.get_retention_info(data_id)
 
-    def get_retention_stats(self) -> dict:
+    def get_retention_stats(self) -> dict[str, Any]:
         """Get retention statistics.
         
         Returns:
@@ -305,12 +307,12 @@ class DataRetentionManager:
         total = len(self.data_registry)
         archived = sum(1 for i in self.data_registry.values() if i.archived)
         
-        by_level = {}
+        by_level: dict[str, int] = {}
         for info in self.data_registry.values():
             level = info.retention_policy.get("level", "unknown")
             by_level[level] = by_level.get(level, 0) + 1
         
-        by_type = {}
+        by_type: dict[str, int] = {}
         for info in self.data_registry.values():
             by_type[info.data_type] = by_type.get(info.data_type, 0) + 1
         

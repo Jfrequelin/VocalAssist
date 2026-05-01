@@ -7,11 +7,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Callable, Any
+from typing import Any, Optional, TypedDict, cast
 from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class RoutingStats(TypedDict):
+    """Typed routing statistics container."""
+
+    total_routed: int
+    by_route: dict[str, int]
+    by_confidence: list[float]
 
 
 class LeonRoute(Enum):
@@ -42,7 +50,7 @@ class RoutingContext:
     confidence: float
     prefer_local: bool = False
     is_offline: bool = False
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=lambda: cast(dict[str, Any], {}))
     parent_context: Optional[RoutingContext] = None
     priority: str = "normal"  # normal, high, low
     timestamp: datetime = field(default_factory=datetime.now)
@@ -60,7 +68,7 @@ class RoutingDecision:
     confidence: float
     reason: str
     fallback_route: Optional[LeonRoute] = None
-    extracted_params: dict[str, Any] = field(default_factory=dict)
+    extracted_params: dict[str, Any] = field(default_factory=lambda: cast(dict[str, Any], {}))
     retry_count: int = 0
     timestamp: datetime = field(default_factory=datetime.now)
 
@@ -70,17 +78,17 @@ class IntelligentRouter:
     
     def __init__(self) -> None:
         """Initialize the intelligent router."""
-        self.stats = {
+        self.stats: RoutingStats = {
             "total_routed": 0,
-            "by_route": {},
+            "by_route": cast(dict[str, int], {}),
             "by_confidence": [],
         }
         self.cache: dict[str, tuple[datetime, RoutingDecision]] = {}
         
         # Confidence thresholds
-        self.LOCAL_THRESHOLD = 0.85
-        self.CACHE_THRESHOLD = 0.75
-        self.LEON_THRESHOLD = 0.4
+        self.local_threshold = 0.85
+        self.cache_threshold = 0.75
+        self.leon_threshold = 0.4
 
     def route(self, context: RoutingContext) -> RoutingDecision:
         """Route query to appropriate destination.
@@ -103,7 +111,7 @@ class IntelligentRouter:
             return cached
         
         # User preference override
-        if context.prefer_local and context.confidence > self.CACHE_THRESHOLD:
+        if context.prefer_local and context.confidence > self.cache_threshold:
             return self._make_decision(
                 route=LeonRoute.LOCAL,
                 confidence=context.confidence,
@@ -112,7 +120,7 @@ class IntelligentRouter:
             )
         
         # High confidence local intents
-        if context.confidence >= self.LOCAL_THRESHOLD:
+        if context.confidence >= self.local_threshold:
             return self._make_decision(
                 route=LeonRoute.LOCAL,
                 confidence=context.confidence,
@@ -121,7 +129,7 @@ class IntelligentRouter:
             )
         
         # Check for cacheable patterns
-        if context.confidence >= self.CACHE_THRESHOLD and self._is_cacheable(context):
+        if context.confidence >= self.cache_threshold and self._is_cacheable(context):
             return self._make_decision(
                 route=LeonRoute.CACHE,
                 confidence=context.confidence,
@@ -131,7 +139,7 @@ class IntelligentRouter:
             )
         
         # Medium confidence - try local first, fallback to Leon
-        if context.confidence >= self.LEON_THRESHOLD:
+        if context.confidence >= self.leon_threshold:
             return self._make_decision(
                 route=LeonRoute.LOCAL,
                 confidence=context.confidence * 0.9,  # Lower effective confidence
@@ -158,7 +166,7 @@ class IntelligentRouter:
         Returns:
             RoutingDecision for offline routing.
         """
-        if context.confidence >= self.LOCAL_THRESHOLD:
+        if context.confidence >= self.local_threshold:
             return self._make_decision(
                 route=LeonRoute.LOCAL,
                 confidence=context.confidence,
@@ -254,7 +262,7 @@ class IntelligentRouter:
         
         return decision
 
-    def get_routing_stats(self) -> dict:
+    def get_routing_stats(self) -> dict[str, Any]:
         """Get routing statistics.
         
         Returns:
@@ -286,9 +294,9 @@ class IntelligentRouter:
             cache_threshold: Threshold for cache routing.
             leon_threshold: Threshold for Leon routing.
         """
-        self.LOCAL_THRESHOLD = local_threshold
-        self.CACHE_THRESHOLD = cache_threshold
-        self.LEON_THRESHOLD = leon_threshold
+        self.local_threshold = local_threshold
+        self.cache_threshold = cache_threshold
+        self.leon_threshold = leon_threshold
 
     def clear_cache(self) -> None:
         """Clear the response cache."""

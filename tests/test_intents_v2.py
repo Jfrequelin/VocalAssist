@@ -6,7 +6,6 @@ Tests a unified intent definition system with slot extraction and validation.
 from __future__ import annotations
 
 import unittest
-from typing import Any
 
 from src.assistant.intents_v2 import IntentRegistry, SlotDefinition, SlotType
 
@@ -27,7 +26,7 @@ class TestIntentRegistryV2(unittest.TestCase):
         )
 
         result = self.registry.get("greet")
-        self.assertIsNotNone(result)
+        assert result is not None
         self.assertEqual(result["keywords"], ["bonjour", "salut", "hello"])
         self.assertEqual(result["priority"], 50)
 
@@ -55,7 +54,7 @@ class TestIntentRegistryV2(unittest.TestCase):
         )
 
         result = self.registry.get("light")
-        self.assertIsNotNone(result)
+        assert result is not None
         self.assertIn("slots", result)
         self.assertIn("room", result["slots"])
         self.assertIn("state", result["slots"])
@@ -130,7 +129,7 @@ class TestIntentRegistryV2(unittest.TestCase):
         )
 
         result = self.registry.get("weather")
-        self.assertIsNotNone(result)
+        assert result is not None
         self.assertIn("city", result["slots"])
         self.assertEqual(result["slots"]["city"].slot_type, SlotType.STRING)
 

@@ -8,11 +8,22 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict, cast
 import logging
 import time
 
 logger = logging.getLogger(__name__)
+
+
+class ConversationData(TypedDict):
+    """Typed structure for stored conversation data."""
+
+    user_id: str
+    created_at: datetime
+    ended_at: Optional[datetime]
+    memory: "ContextMemory"
+    state: "StateTracker"
+    active: bool
 
 
 @dataclass
@@ -25,9 +36,9 @@ class ConversationContext:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: datetime = field(default_factory=datetime.now)
     confidence: float = 1.0
-    slots: dict[str, Any] = field(default_factory=dict)
-    entities: dict[str, Any] = field(default_factory=dict)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    slots: dict[str, Any] = field(default_factory=lambda: cast(dict[str, Any], {}))
+    entities: dict[str, Any] = field(default_factory=lambda: cast(dict[str, Any], {}))
+    metadata: dict[str, Any] = field(default_factory=lambda: cast(dict[str, Any], {}))
 
 
 class ContextMemory:
@@ -99,13 +110,13 @@ class ContextMemory:
             if entity_key in t.entities and t.entities[entity_key] == entity_value
         ]
 
-    def get_summary(self) -> dict:
+    def get_summary(self) -> dict[str, Any]:
         """Get memory summary.
         
         Returns:
             Dictionary with memory statistics.
         """
-        intents = {}
+        intents: dict[str, int] = {}
         for turn in self.turns:
             intents[turn.intent] = intents.get(turn.intent, 0) + 1
         
@@ -195,8 +206,8 @@ class StateTracker:
         Returns:
             Dictionary of all state.
         """
-        result = {}
-        expired_keys = []
+        result: dict[str, Any] = {}
+        expired_keys: list[str] = []
         
         for key, (value, expiry) in self.state.items():
             if expiry and time.time() > expiry:
@@ -216,7 +227,7 @@ class ConversationManager:
     
     def __init__(self) -> None:
         """Initialize conversation manager."""
-        self.conversations: dict[str, dict] = {}
+        self.conversations: dict[str, ConversationData] = {}
 
     def start_conversation(self, user_id: str) -> str:
         """Start a new conversation.
@@ -245,7 +256,7 @@ class ConversationManager:
         user_input: str,
         assistant_response: str,
         intent: str,
-        **kwargs
+        **kwargs: Any
     ) -> None:
         """Add user-assistant exchange to conversation.
         
@@ -412,7 +423,7 @@ class ConversationManager:
             Number of conversations cleaned.
         """
         cutoff = datetime.now() - timedelta(hours=hours)
-        to_delete = []
+        to_delete: list[str] = []
         
         for conv_id, conv in self.conversations.items():
             if conv["created_at"] < cutoff:
@@ -424,7 +435,7 @@ class ConversationManager:
         logger.info(f"Cleaned up {len(to_delete)} old conversations")
         return len(to_delete)
 
-    def get_conversation_stats(self, conv_id: str) -> dict:
+    def get_conversation_stats(self, conv_id: str) -> dict[str, Any]:
         """Get conversation statistics.
         
         Args:

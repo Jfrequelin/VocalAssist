@@ -27,7 +27,7 @@ class SlotDefinition:
 
     slot_type: SlotType
     required: bool = False
-    enum_values: list[str] = field(default_factory=list)
+    enum_values: list[str] = field(default_factory=lambda: [])
     min_value: Optional[int] = None
     max_value: Optional[int] = None
     pattern: Optional[str] = None  # Regex pattern for extraction
@@ -40,7 +40,7 @@ class IntentDefinition:
     intent_id: str
     keywords: list[str]
     priority: int = 50
-    slots: dict[str, SlotDefinition] = field(default_factory=dict)
+    slots: dict[str, SlotDefinition] = field(default_factory=lambda: {})
     response_template: Optional[str] = None
     response_factory: Optional[Callable[[dict[str, Any]], str]] = None
 

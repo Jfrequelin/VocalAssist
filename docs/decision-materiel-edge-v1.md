@@ -16,6 +16,33 @@ Le prototype Edge V1 utilisera un module ESP32-S3 avec haut-parleur integre (pro
 - Commandes locales basiques (stop, mute micro, volume, extinction/restart logique appareil).
 - Envoi de l'audio au serveur local pour STT/NLU/Leon.
 - Lecture locale des reponses TTS et des flux audio ordonnes par le serveur.
+- Affichage local des etats et informations utiles sur ecran.
+- Interaction tactile minimale pour actions locales ou navigation simple.
+
+## Fonctionnalites rendues accessibles par le hardware retenu
+
+- ecran tactile rond 1.85" pour retour visuel local
+- microphone embarque pour capture vocale edge
+- haut-parleur/chaine audio locale pour restitution TTS
+- batterie rechargeable pour usage autonome hors USB
+- RTC pour scenarios temporels et reprise d'etat future
+- slot TF pour stockage auxiliaire eventuel
+- Wi-Fi/BLE pour connectivite et extension des usages edge
+
+## Fonctionnalites immediatement activables vs a integrer
+
+### Immediatement compatibles avec l'architecture cible
+
+- wake word local
+- capture audio et envoi serveur
+- lecture TTS locale
+- bouton mute et etats d'appareil
+
+### Necessitent encore une integration logicielle dediee
+
+- UI ecran
+- gestion tactile
+- exploitation batterie/RTC/TF en logique produit
 
 ## Pourquoi ce choix
 

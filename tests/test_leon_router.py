@@ -6,8 +6,6 @@ Tests advanced routing logic for external NLU processing.
 from __future__ import annotations
 
 import unittest
-from enum import Enum
-from dataclasses import dataclass
 
 from src.assistant.leon_router import (
     LeonRoute,
@@ -269,7 +267,7 @@ class TestRoutingIntegration(unittest.TestCase):
             "Tell me the weather",
         ]
         
-        decisions = []
+        decisions: list[RoutingDecision] = []
         for query in queries:
             context = RoutingContext(
                 user_input=query,
@@ -306,7 +304,7 @@ class TestRoutingIntegration(unittest.TestCase):
 
     def test_routing_statistics(self) -> None:
         """Test tracking routing statistics."""
-        for i in range(10):
+        for _ in range(10):
             context = RoutingContext(
                 user_input="Test query",
                 detected_intent="test",

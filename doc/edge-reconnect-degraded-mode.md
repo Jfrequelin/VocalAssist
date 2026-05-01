@@ -3,6 +3,10 @@
 ## Objectif
 Assurer la continuité de service locale quand le backend est indisponible, puis reprise automatique sans intervention lourde.
 
+## Référence matériel
+- Carte cible: Waveshare ESP32-S3-Touch-LCD-1.85C-BOX-EN
+- Fiche d'integration hardware/wiki: [doc/waveshare-esp32-s3-touch-lcd-1.85c.md](waveshare-esp32-s3-touch-lcd-1.85c.md)
+
 ## Strategie
 
 1. Détection d'échec d'envoi

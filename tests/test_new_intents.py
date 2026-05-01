@@ -8,6 +8,7 @@ from __future__ import annotations
 import unittest
 
 from src.assistant.intent_configs import create_default_registry
+from src.assistant.intents_v2 import SlotDefinition
 
 
 class TestNewCriticalIntents(unittest.TestCase):
@@ -63,13 +64,14 @@ class TestNewCriticalIntents(unittest.TestCase):
     def test_intent_with_slots_has_slot_definitions(self) -> None:
         """Test that intents with slots have proper slot definitions."""
         light = self.registry.get("light")
-        
+
+        assert light is not None
         if "slots" in light:
             slots = light["slots"]
             self.assertIsInstance(slots, dict)
-            
-            for slot_name, slot_def in slots.items():
-                # Each slot should have a type
+
+            for _, slot_def in slots.items():
+                self.assertIsInstance(slot_def, SlotDefinition)
                 self.assertIsNotNone(slot_def.slot_type)
 
 
@@ -114,7 +116,7 @@ class TestIntentCoverageForLocalUnderstanding(unittest.TestCase):
             ("quel est le programme demain", "agenda"),
         ]
         
-        for text, expected_intent in test_cases:
+        for text, _expected_intent in test_cases:
             matched = self.registry.find_intent(text)
             self.assertIsNotNone(matched, f"Should find intent for '{text}'")
             # Intent might not be exact due to matching rules

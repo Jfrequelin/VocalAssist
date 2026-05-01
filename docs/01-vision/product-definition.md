@@ -14,11 +14,17 @@ Inclus:
 - routage vers serveur pour demandes complexes,
 - commandes parametrees (intent + slots),
 - lecture locale de TTS et flux audio.
+- retour visuel local sur ecran pour les etats critiques (hardware disponible).
+- interaction tactile locale minimale (hardware disponible).
 
 Exclus:
 - vision/camera,
 - dependance cloud obligatoire,
 - marketplace publique.
+
+Non encore implemente dans ce depot (mais rendu possible par le hardware retenu):
+- interface ecran/tactile complete,
+- scenarios produits batterie/RTC/TF.
 
 ## Cibles qualite
 

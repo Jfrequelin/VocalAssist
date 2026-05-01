@@ -60,8 +60,8 @@ class TestDateParser(unittest.TestCase):
     def test_parse_demain(self) -> None:
         """Test parsing 'demain' (tomorrow)."""
         result = self.parser.parse("demain")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
         self.assertTrue(result.is_valid())
         expected = self.now + timedelta(days=1)
         self.assertEqual(result.date_value, expected.date())
@@ -69,45 +69,46 @@ class TestDateParser(unittest.TestCase):
     def test_parse_aujourd_hui(self) -> None:
         """Test parsing 'aujourd'hui' (today)."""
         result = self.parser.parse("aujourd'hui")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
         self.assertEqual(result.date_value, self.now.date())
 
     def test_parse_hier(self) -> None:
         """Test parsing 'hier' (yesterday)."""
         result = self.parser.parse("hier")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
         expected = self.now - timedelta(days=1)
         self.assertEqual(result.date_value, expected.date())
 
     def test_parse_day_of_week(self) -> None:
         """Test parsing day of week."""
         result = self.parser.parse("lundi")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
         self.assertTrue(result.is_valid())
 
     def test_parse_french_month_name(self) -> None:
         """Test parsing date with French month names."""
         result = self.parser.parse("15 mai")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
         self.assertEqual(result.date_value, date(2026, 5, 15))
 
     def test_parse_time_reference(self) -> None:
         """Test parsing time references."""
         result = self.parser.parse("14h30")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
+        assert result.datetime_value is not None
         self.assertEqual(result.datetime_value.hour, 14)
         self.assertEqual(result.datetime_value.minute, 30)
 
     def test_parse_combined_date_time(self) -> None:
         """Test parsing combined date and time."""
         result = self.parser.parse("demain à 14h")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
         self.assertTrue(result.is_valid())
         # Should have time
         if result.datetime_value:
@@ -118,17 +119,16 @@ class TestDateParser(unittest.TestCase):
     def test_parse_relative_time(self) -> None:
         """Test parsing relative time expressions."""
         result = self.parser.parse("dans 2 heures")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
         self.assertTrue(result.is_valid())
-        expected = self.now + timedelta(hours=2)
         self.assertIsNotNone(result.datetime_value)
 
     def test_parse_numeric_date(self) -> None:
         """Test parsing numeric dates."""
         result = self.parser.parse("15/05/2026")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
         self.assertEqual(result.date_value, date(2026, 5, 15))
 
     def test_parse_invalid_date(self) -> None:
@@ -144,23 +144,22 @@ class TestDateParser(unittest.TestCase):
     def test_parse_next_monday(self) -> None:
         """Test parsing 'prochain lundi' (next Monday)."""
         result = self.parser.parse("prochain lundi")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
         self.assertTrue(result.is_valid())
 
     def test_parse_this_week(self) -> None:
         """Test parsing 'cette semaine' with day name."""
         result = self.parser.parse("cette semaine mercredi")
-        
-        self.assertIsNotNone(result)
+
+        assert result is not None
         # Should return a valid date
         self.assertTrue(result.is_valid())
 
     def test_parse_confidence_level(self) -> None:
         """Test that confidence levels vary."""
         result1 = self.parser.parse("demain")
-        result2 = self.parser.parse("probablement demain")
-        
+        assert result1 is not None
         # Exact date should have higher confidence
         self.assertGreater(result1.confidence, 0.8)
 
@@ -193,7 +192,7 @@ class TestLocalAgenda(unittest.TestCase):
         self.agenda.add_event(event)
         
         retrieved = self.agenda.get_event(event["id"])
-        self.assertIsNotNone(retrieved)
+        assert retrieved is not None
         self.assertEqual(retrieved["title"], "Appointment")
 
     def test_list_events_for_date(self) -> None:
@@ -287,6 +286,7 @@ class TestLocalAgenda(unittest.TestCase):
         self.agenda.update_event(event)
         
         retrieved = self.agenda.get_event(event["id"])
+        assert retrieved is not None
         self.assertEqual(retrieved["title"], "Updated title")
 
     def test_search_events_by_title(self) -> None:

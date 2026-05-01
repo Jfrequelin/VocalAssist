@@ -325,8 +325,8 @@ class TestConversationManager(unittest.TestCase):
 
     def test_get_active_conversations(self) -> None:
         """Test getting active conversations."""
-        conv1 = self.manager.start_conversation("user101")
-        conv2 = self.manager.start_conversation("user102")
+        _conv1 = self.manager.start_conversation("user101")
+        _conv2 = self.manager.start_conversation("user102")
         
         active = self.manager.get_active_conversations()
         self.assertGreaterEqual(len(active), 2)

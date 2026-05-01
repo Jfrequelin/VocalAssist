@@ -16,10 +16,25 @@ Implémenter le firmware complet pour le satellite edge ESP32-S3:
 - Voice Activity Detection (VAD)
 - Client HTTP vers serveur central
 - Lecture flux audio TTS retourné du serveur
-- Gestion état appareil (LED, bouton mute)
+- Gestion état appareil (LED, bouton mute, écran, tactile)
 - Reconnexion automatique + exponential backoff
 
 **Justification**: Réduire latence/charge serveur, gestion critique local, robustesse sans serveur.
+
+## Fonctionnalites accessibles avec la carte cible
+
+- ecran LCD tactile 1.85" 360x360 pour HMI locale
+- audio in/out embarque pour assistant vocal autonome
+- batterie rechargeable et RTC pour scenarios mobiles ou veille
+- TF card pour stockage local technique futur
+- Wi-Fi/BLE pour dialogue serveur et extensions de provisioning
+
+## Fonctionnalites a prioriser dans le firmware
+
+- affichage des etats `idle`, `listening`, `thinking`, `speaking`, `error`, `muted`
+- confirmation visuelle des commandes locales critiques
+- exploitation du tactile pour mute, volume, stop, navigation simple
+- journaux et diagnostics pouvant evoluer vers stockage TF
 
 ---
 
@@ -32,6 +47,8 @@ Implémenter le firmware complet pour le satellite edge ESP32-S3:
 - [ ] Reçoit réponse TTS (audio/wav) en <2.5s (P95)
 - [ ] Joue audio TTS via haut-parleur sans artifacts
 - [ ] Bouton mute physique + LED state indicator
+- [ ] Ecran affiche l'etat edge et les retours utilisateur essentiels
+- [ ] Tactile permet au moins une interaction locale simple (mute/stop/menu)
 - [ ] Reconnexion auto + logs (fichier SD ou UART)
 - [ ] 0 crash sur 1000+ interactions de test
 
@@ -85,6 +102,11 @@ Implémenter le firmware complet pour le satellite edge ESP32-S3:
 - [ ] GPIO mute button → mute audio in + stop STT
 - [ ] LED: RED (error), BLUE (listening), GREEN (ok), YELLOW (thinking)
 - [ ] UART logging ou SD card logs
+
+**EDGE-07B**: Screen + touch state management  
+- [ ] Affichage ecran des etats runtime principaux
+- [ ] Action tactile simple: mute/stop/validation
+- [ ] UI minimale compatible faible RAM/PSRAM
 
 **EDGE-08**: Reconnection + crash recovery  
 - [ ] Detect serveur unavailable → mode dégradé local (stop/mute/volume)

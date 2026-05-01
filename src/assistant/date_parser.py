@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass, field
+import datetime as dt
+from dataclasses import dataclass
 from datetime import datetime, timedelta, date
-from typing import Optional
+from typing import Optional, TypedDict
 import logging
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,17 @@ class DateParseResult:
     def is_valid(self) -> bool:
         """Check if the parse result is valid."""
         return self.confidence > 0.5 and (self.datetime_value is not None or self.date_value is not None)
+
+
+class AgendaEvent(TypedDict):
+    """Typed structure for agenda events."""
+
+    id: str
+    title: str
+    datetime: datetime
+    description: str
+    location: str
+    created_at: datetime
 
 
 class DateParser:
@@ -302,7 +314,7 @@ class LocalAgenda:
     
     def __init__(self) -> None:
         """Initialize the local agenda."""
-        self.events: dict[str, dict] = {}
+        self.events: dict[str, AgendaEvent] = {}
         self.date_parser = DateParser()
 
     def create_event(
@@ -311,7 +323,7 @@ class LocalAgenda:
         datetime: datetime,
         description: str = "",
         location: str = "",
-    ) -> dict:
+    ) -> AgendaEvent:
         """Create a new agenda event.
         
         Args:
@@ -329,10 +341,10 @@ class LocalAgenda:
             "datetime": datetime,
             "description": description,
             "location": location,
-            "created_at": datetime.now(),
+            "created_at": dt.datetime.now(),
         }
 
-    def add_event(self, event: dict) -> str:
+    def add_event(self, event: AgendaEvent) -> str:
         """Add event to agenda.
         
         Args:
@@ -344,7 +356,7 @@ class LocalAgenda:
         self.events[event["id"]] = event
         return event["id"]
 
-    def get_event(self, event_id: str) -> Optional[dict]:
+    def get_event(self, event_id: str) -> Optional[AgendaEvent]:
         """Get event by ID.
         
         Args:
@@ -355,7 +367,7 @@ class LocalAgenda:
         """
         return self.events.get(event_id)
 
-    def update_event(self, event: dict) -> None:
+    def update_event(self, event: AgendaEvent) -> None:
         """Update an existing event.
         
         Args:
@@ -378,7 +390,7 @@ class LocalAgenda:
             return True
         return False
 
-    def get_events_for_date(self, d: date) -> list[dict]:
+    def get_events_for_date(self, d: date) -> list[AgendaEvent]:
         """Get all events for a specific date.
         
         Args:
@@ -394,7 +406,7 @@ class LocalAgenda:
         events.sort(key=lambda e: e["datetime"])
         return events
 
-    def get_events_for_week(self, d: date) -> list[dict]:
+    def get_events_for_week(self, d: date) -> list[AgendaEvent]:
         """Get all events for the week containing the date.
         
         Args:
@@ -415,7 +427,7 @@ class LocalAgenda:
         events.sort(key=lambda e: e["datetime"])
         return events
 
-    def search_events(self, query: str) -> list[dict]:
+    def search_events(self, query: str) -> list[AgendaEvent]:
         """Search events by title.
         
         Args:
@@ -432,7 +444,7 @@ class LocalAgenda:
         results.sort(key=lambda e: e["datetime"])
         return results
 
-    def get_upcoming_events(self, days: int = 7) -> list[dict]:
+    def get_upcoming_events(self, days: int = 7) -> list[AgendaEvent]:
         """Get upcoming events.
         
         Args:

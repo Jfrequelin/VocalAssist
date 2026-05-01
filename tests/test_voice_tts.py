@@ -14,7 +14,8 @@ Coverage:
 import unittest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from typing import Any
+from unittest.mock import patch, MagicMock
 
 from src.assistant.voice_pipeline import (
     TextToSpeechEngine,
@@ -120,7 +121,7 @@ class TestPiperTextToSpeech(unittest.TestCase):
         self.assertTrue(callable(self.tts.synthesize))
 
     @patch("shutil.which")
-    def test_piper_synthesize_returns_string(self, mock_which):
+    def test_piper_synthesize_returns_string(self, mock_which: Any):
         """PiperTextToSpeech.synthesize returns string (path or text)."""
         mock_which.return_value = "/usr/bin/piper"
         
@@ -167,7 +168,7 @@ class TestPiperTextToSpeech(unittest.TestCase):
         self.assertEqual(tts.output_dir, str(new_output_dir))
 
     @patch("shutil.which")
-    def test_piper_missing_binary(self, mock_which):
+    def test_piper_missing_binary(self, mock_which: Any):
         """PiperTextToSpeech raises error if piper binary not found."""
         mock_which.return_value = None  # piper not in PATH
         
@@ -177,7 +178,7 @@ class TestPiperTextToSpeech(unittest.TestCase):
         self.assertEqual(tts.model_path, "/model.onnx")
 
     @patch("shutil.which")
-    def test_piper_text_stripping(self, mock_which):
+    def test_piper_text_stripping(self, mock_which: Any):
         """PiperTextToSpeech strips whitespace from input."""
         mock_which.return_value = "/usr/bin/piper"
         
@@ -234,7 +235,7 @@ class TestTTSIntegration(unittest.TestCase):
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     @patch("shutil.which")
-    def test_tts_engines_can_be_swapped(self, mock_which):
+    def test_tts_engines_can_be_swapped(self, mock_which: Any):
         """TTS engines are interchangeable via Protocol."""
         temp_dir = tempfile.mkdtemp()
         try:
@@ -288,7 +289,7 @@ class TestTTSFrenchSupport(unittest.TestCase):
             shutil.rmtree(temp_dir, ignore_errors=True)
 
     @patch("shutil.which")
-    def test_piper_unicode_text_handling(self, mock_which):
+    def test_piper_unicode_text_handling(self, mock_which: Any):
         """PiperTextToSpeech handles Unicode French text."""
         temp_dir = tempfile.mkdtemp()
         try:
@@ -333,7 +334,7 @@ class TestTTSOutputManagement(unittest.TestCase):
     def test_tts_consistent_output_path(self):
         """TTS would generate consistent output paths."""
         # Multiple calls should generate different timestamps
-        tts = PiperTextToSpeech(model_path="/model.onnx", output_dir=self.temp_dir)
+        PiperTextToSpeech(model_path="/model.onnx", output_dir=self.temp_dir)
         
         # Verify base directory exists
         output_dir = Path(self.temp_dir)
