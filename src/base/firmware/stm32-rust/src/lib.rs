@@ -7,6 +7,7 @@
 
 use core::str;
 use heapless::Deque;
+use heapless::String as HString;
 
 /// Device runtime state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +166,156 @@ impl Default for EdgeDeviceState {
 pub struct EdgeDeviceController {
     state: EdgeDeviceState,
     events: Deque<&'static str, 16>,
+}
+
+/// Supported local system intents handled without network round-trip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SystemIntent {
+    StopMedia,
+    ToggleMute,
+    VolumeUp,
+    VolumeDown,
+}
+
+/// Local audio control state (DAC/amplifier abstraction).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AudioControlState {
+    pub volume: u8,
+    pub muted: bool,
+    pub amplifier_enabled: bool,
+    pub media_active: bool,
+    pub stop_signal: bool,
+}
+
+impl Default for AudioControlState {
+    fn default() -> Self {
+        Self {
+            volume: 50,
+            muted: false,
+            amplifier_enabled: true,
+            media_active: false,
+            stop_signal: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalSystemDecision {
+    pub handled_locally: bool,
+    pub intent: Option<SystemIntent>,
+}
+
+fn normalize_ascii_lower_no_diacritics(input: &str) -> HString<256> {
+    let mut out: HString<256> = HString::new();
+    for ch in input.chars() {
+        let mapped = match ch {
+            'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' | 'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => {
+                'a'
+            }
+            'Ç' | 'ç' => 'c',
+            'È' | 'É' | 'Ê' | 'Ë' | 'è' | 'é' | 'ê' | 'ë' => 'e',
+            'Ì' | 'Í' | 'Î' | 'Ï' | 'ì' | 'í' | 'î' | 'ï' => 'i',
+            'Ñ' | 'ñ' => 'n',
+            'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'ò' | 'ó' | 'ô' | 'õ' | 'ö' => 'o',
+            'Ù' | 'Ú' | 'Û' | 'Ü' | 'ù' | 'ú' | 'û' | 'ü' => 'u',
+            'Ý' | 'ý' | 'ÿ' => 'y',
+            _ => ch.to_ascii_lowercase(),
+        };
+        if out.push(mapped).is_err() {
+            break;
+        }
+    }
+    out
+}
+
+/// Detect local system intents with priority: stop_media > mute > volume.
+pub fn detect_system_intent(transcript: &str) -> Option<SystemIntent> {
+    let normalized = normalize_ascii_lower_no_diacritics(transcript);
+    let text = normalized.as_str().trim();
+
+    if text.is_empty() {
+        return None;
+    }
+
+    const STOP_PATTERNS: [&str; 6] = [
+        "stop la musique",
+        "arrete la musique",
+        "arrete musique",
+        "pause musique",
+        "stop media",
+        "coupe la musique",
+    ];
+    const MUTE_PATTERNS: [&str; 4] = ["mute", "coupe le son", "mode muet", "silence"];
+    const VOLUME_UP_PATTERNS: [&str; 4] = ["augmente le son", "monte le son", "plus fort", "volume +"];
+    const VOLUME_DOWN_PATTERNS: [&str; 4] =
+        ["baisse le son", "moins fort", "diminue le son", "volume -"];
+
+    if STOP_PATTERNS.iter().any(|p| text.contains(p)) {
+        return Some(SystemIntent::StopMedia);
+    }
+    if MUTE_PATTERNS.iter().any(|p| text.contains(p)) {
+        return Some(SystemIntent::ToggleMute);
+    }
+    if VOLUME_UP_PATTERNS.iter().any(|p| text.contains(p)) {
+        return Some(SystemIntent::VolumeUp);
+    }
+    if VOLUME_DOWN_PATTERNS.iter().any(|p| text.contains(p)) {
+        return Some(SystemIntent::VolumeDown);
+    }
+
+    None
+}
+
+/// Apply a local system intent on device/audio state.
+pub fn apply_system_intent(
+    intent: SystemIntent,
+    controller: &mut EdgeDeviceController,
+    audio: &mut AudioControlState,
+) -> LocalSystemDecision {
+    match intent {
+        SystemIntent::StopMedia => {
+            audio.media_active = false;
+            audio.stop_signal = true;
+            controller.finish_interaction();
+        }
+        SystemIntent::ToggleMute => {
+            let muted = controller.toggle_mute();
+            audio.muted = muted;
+            audio.amplifier_enabled = !muted;
+            if muted {
+                audio.media_active = false;
+            }
+        }
+        SystemIntent::VolumeUp => {
+            audio.volume = audio.volume.saturating_add(10).min(100);
+            audio.stop_signal = false;
+        }
+        SystemIntent::VolumeDown => {
+            audio.volume = audio.volume.saturating_sub(10);
+            audio.stop_signal = false;
+        }
+    }
+
+    LocalSystemDecision {
+        handled_locally: true,
+        intent: Some(intent),
+    }
+}
+
+/// Detect then apply local system intent if any.
+pub fn handle_system_intent(
+    transcript: &str,
+    controller: &mut EdgeDeviceController,
+    audio: &mut AudioControlState,
+) -> LocalSystemDecision {
+    if let Some(intent) = detect_system_intent(transcript) {
+        apply_system_intent(intent, controller, audio)
+    } else {
+        LocalSystemDecision {
+            handled_locally: false,
+            intent: None,
+        }
+    }
 }
 
 impl EdgeDeviceController {
@@ -547,5 +698,84 @@ mod tests {
             ctrl.toggle_mute();
         }
         assert_eq!(ctrl.events_len(), 16);
+    }
+
+    #[test]
+    fn test_detect_system_intent_with_diacritics() {
+        assert_eq!(
+            detect_system_intent("arrête la musique"),
+            Some(SystemIntent::StopMedia)
+        );
+        assert_eq!(
+            detect_system_intent("Silence s'il te plait"),
+            Some(SystemIntent::ToggleMute)
+        );
+        assert_eq!(
+            detect_system_intent("augmente le son"),
+            Some(SystemIntent::VolumeUp)
+        );
+        assert_eq!(
+            detect_system_intent("baisse le son"),
+            Some(SystemIntent::VolumeDown)
+        );
+    }
+
+    #[test]
+    fn test_detect_system_intent_ambiguous_stop_is_ignored() {
+        assert_eq!(detect_system_intent("stop"), None);
+    }
+
+    #[test]
+    fn test_handle_system_intent_toggle_mute_syncs_led_and_audio() {
+        let mut ctrl = EdgeDeviceController::new();
+        let mut audio = AudioControlState::default();
+
+        let decision = handle_system_intent("mode muet", &mut ctrl, &mut audio);
+        assert!(decision.handled_locally);
+        assert_eq!(decision.intent, Some(SystemIntent::ToggleMute));
+        assert_eq!(ctrl.state().led_state, BaseState::Muted);
+        assert!(!audio.amplifier_enabled);
+        assert!(audio.muted);
+    }
+
+    #[test]
+    fn test_handle_system_intent_volume_clamp() {
+        let mut ctrl = EdgeDeviceController::new();
+        let mut audio = AudioControlState {
+            volume: 95,
+            ..AudioControlState::default()
+        };
+
+        let _ = handle_system_intent("augmente le son", &mut ctrl, &mut audio);
+        assert_eq!(audio.volume, 100);
+
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        let _ = handle_system_intent("baisse le son", &mut ctrl, &mut audio);
+        assert_eq!(audio.volume, 0);
+    }
+
+    #[test]
+    fn test_handle_system_intent_stop_media() {
+        let mut ctrl = EdgeDeviceController::new();
+        let mut audio = AudioControlState {
+            media_active: true,
+            ..AudioControlState::default()
+        };
+
+        let decision = handle_system_intent("pause musique", &mut ctrl, &mut audio);
+        assert!(decision.handled_locally);
+        assert_eq!(decision.intent, Some(SystemIntent::StopMedia));
+        assert!(!audio.media_active);
+        assert!(audio.stop_signal);
+        assert_eq!(ctrl.state().led_state, BaseState::Idle);
     }
 }
