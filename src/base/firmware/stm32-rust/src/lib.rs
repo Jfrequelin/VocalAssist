@@ -966,6 +966,10 @@ pub struct NetworkState {
     /// Estimated retry interval in milliseconds (kept for host-side simulation).
     pub retry_interval_ms: u32,
     pub consecutive_failures: u8,
+    /// Increments each time a fresh connection is established.
+    pub reconnect_generation: u16,
+    /// Indicates that stream sequence synchronization is required.
+    pub stream_resync_required: bool,
 }
 
 impl NetworkState {
@@ -975,6 +979,8 @@ impl NetworkState {
             max_retries,
             retry_interval_ms: 2_000,
             consecutive_failures: 0,
+            reconnect_generation: 0,
+            stream_resync_required: false,
         }
     }
 
@@ -986,6 +992,7 @@ impl NetworkState {
     pub fn on_disconnect(&mut self) -> WifiStatus {
         self.status = WifiStatus::Reconnecting { attempt: 1 };
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
+        self.stream_resync_required = true;
         self.status
     }
 
@@ -1010,6 +1017,176 @@ impl NetworkState {
     pub fn on_connected(&mut self) {
         self.status = WifiStatus::Connected;
         self.consecutive_failures = 0;
+        self.reconnect_generation = self.reconnect_generation.saturating_add(1);
+    }
+
+    /// Called when no stream heartbeat is received for too long.
+    /// Triggers reconnection and stream resynchronization.
+    pub fn on_stream_timeout(&mut self) -> WifiStatus {
+        self.on_disconnect()
+    }
+
+    /// Marks stream resynchronization complete after first valid frame.
+    pub fn acknowledge_resync(&mut self) {
+        self.stream_resync_required = false;
+    }
+}
+
+/// Result of sequence-based stream synchronization check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamSyncOutcome {
+    InOrder,
+    Missing { lost_packets: u16 },
+    OutOfOrder,
+    Duplicate,
+    ResyncRequired,
+}
+
+/// Maintains stream sequence synchronization and packet loss counters.
+#[derive(Debug, Clone)]
+pub struct StreamSyncState {
+    expected_seq: u32,
+    initialized: bool,
+    pub out_of_order_packets: u32,
+    pub duplicate_packets: u32,
+    pub lost_packets: u32,
+}
+
+impl Default for StreamSyncState {
+    fn default() -> Self {
+        Self {
+            expected_seq: 0,
+            initialized: false,
+            out_of_order_packets: 0,
+            duplicate_packets: 0,
+            lost_packets: 0,
+        }
+    }
+}
+
+impl StreamSyncState {
+    pub fn reset(&mut self) {
+        self.expected_seq = 0;
+        self.initialized = false;
+    }
+
+    pub fn accept_packet(&mut self, seq: u32, resync_required: bool) -> StreamSyncOutcome {
+        if resync_required {
+            self.reset();
+            self.expected_seq = seq.saturating_add(1);
+            self.initialized = true;
+            return StreamSyncOutcome::ResyncRequired;
+        }
+
+        if !self.initialized {
+            self.expected_seq = seq.saturating_add(1);
+            self.initialized = true;
+            return StreamSyncOutcome::InOrder;
+        }
+
+        if seq == self.expected_seq {
+            self.expected_seq = self.expected_seq.saturating_add(1);
+            return StreamSyncOutcome::InOrder;
+        }
+
+        if seq > self.expected_seq {
+            let delta = seq.saturating_sub(self.expected_seq);
+            let lost = delta.min(u16::MAX as u32) as u16;
+            self.lost_packets = self.lost_packets.saturating_add(delta);
+            self.expected_seq = seq.saturating_add(1);
+            return StreamSyncOutcome::Missing { lost_packets: lost };
+        }
+
+        if seq.saturating_add(1) == self.expected_seq {
+            self.duplicate_packets = self.duplicate_packets.saturating_add(1);
+            return StreamSyncOutcome::Duplicate;
+        }
+
+        self.out_of_order_packets = self.out_of_order_packets.saturating_add(1);
+        StreamSyncOutcome::OutOfOrder
+    }
+}
+
+/// Backpressure action for bounded queues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackpressureAction {
+    Normal,
+    Throttle,
+    DropOldest,
+}
+
+/// Queue-pressure controller with high/low watermarks.
+#[derive(Debug, Clone)]
+pub struct BackpressureController {
+    pub high_watermark: u8,
+    pub low_watermark: u8,
+    pub dropped_frames: u32,
+    pub throttle_events: u32,
+}
+
+impl BackpressureController {
+    pub fn new(high_watermark: u8, low_watermark: u8) -> Self {
+        Self {
+            high_watermark,
+            low_watermark,
+            dropped_frames: 0,
+            throttle_events: 0,
+        }
+    }
+
+    pub fn evaluate(&mut self, queue_len: usize) -> BackpressureAction {
+        if queue_len >= self.high_watermark as usize {
+            self.dropped_frames = self.dropped_frames.saturating_add(1);
+            return BackpressureAction::DropOldest;
+        }
+        if queue_len >= self.low_watermark as usize {
+            self.throttle_events = self.throttle_events.saturating_add(1);
+            return BackpressureAction::Throttle;
+        }
+        BackpressureAction::Normal
+    }
+}
+
+impl Default for BackpressureController {
+    fn default() -> Self {
+        Self::new(12, 8)
+    }
+}
+
+/// Packet transport metrics for observability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StreamTransportMetrics {
+    pub total_packets: u32,
+    pub lost_packets: u32,
+    /// Smoothed absolute jitter in milliseconds.
+    pub jitter_ms: u16,
+}
+
+impl StreamTransportMetrics {
+    pub fn record_packet(&mut self) {
+        self.total_packets = self.total_packets.saturating_add(1);
+    }
+
+    pub fn record_loss(&mut self, lost: u16) {
+        self.lost_packets = self.lost_packets.saturating_add(lost as u32);
+    }
+
+    /// RFC3550-style simplified jitter smoothing using 1/16 EWMA.
+    pub fn update_jitter(&mut self, interarrival_delta_ms: u16) {
+        let current = self.jitter_ms as i32;
+        let sample = interarrival_delta_ms as i32;
+        let diff = (sample - current).abs();
+        let next = current + ((diff - current) / 16);
+        self.jitter_ms = next.max(0).min(u16::MAX as i32) as u16;
+    }
+
+    /// Packet loss percentage with integer precision.
+    pub fn packet_loss_percent(&self) -> u8 {
+        if self.total_packets == 0 {
+            return 0;
+        }
+        let loss = (self.lost_packets.saturating_mul(100)) / self.total_packets;
+        loss.min(100) as u8
     }
 }
 
@@ -1992,6 +2169,11 @@ mod tests {
         net.on_connected();
         assert_eq!(net.status, WifiStatus::Connected);
         assert_eq!(net.consecutive_failures, 0);
+        assert_eq!(net.reconnect_generation, 1);
+        assert!(net.stream_resync_required);
+
+        net.acknowledge_resync();
+        assert!(!net.stream_resync_required);
     }
 
     #[test]
@@ -2002,6 +2184,67 @@ mod tests {
         net.on_connected();
         net.on_disconnect();
         assert_eq!(net.consecutive_failures, 1); // reset on connect then re-incremented
+    }
+
+    #[test]
+    fn test_wifi_stream_timeout_triggers_reconnect() {
+        let mut net = NetworkState::new(2);
+        let status = net.on_stream_timeout();
+        assert_eq!(status, WifiStatus::Reconnecting { attempt: 1 });
+        assert!(net.stream_resync_required);
+    }
+
+    // ─── MACRO-012/305: Streaming resilience primitives ───────────────────
+
+    #[test]
+    fn test_stream_sync_detects_missing_and_out_of_order_packets() {
+        let mut sync = StreamSyncState::default();
+
+        assert_eq!(sync.accept_packet(10, false), StreamSyncOutcome::InOrder);
+        assert_eq!(sync.accept_packet(11, false), StreamSyncOutcome::InOrder);
+        assert_eq!(
+            sync.accept_packet(14, false),
+            StreamSyncOutcome::Missing { lost_packets: 2 }
+        );
+        assert_eq!(sync.lost_packets, 2);
+
+        assert_eq!(sync.accept_packet(12, false), StreamSyncOutcome::OutOfOrder);
+        assert_eq!(sync.out_of_order_packets, 1);
+    }
+
+    #[test]
+    fn test_stream_sync_resync_required_path() {
+        let mut sync = StreamSyncState::default();
+        let outcome = sync.accept_packet(200, true);
+        assert_eq!(outcome, StreamSyncOutcome::ResyncRequired);
+        // Next in-order packet after resync point.
+        assert_eq!(sync.accept_packet(201, false), StreamSyncOutcome::InOrder);
+    }
+
+    #[test]
+    fn test_backpressure_controller_thresholds() {
+        let mut bp = BackpressureController::new(10, 6);
+        assert_eq!(bp.evaluate(2), BackpressureAction::Normal);
+        assert_eq!(bp.evaluate(6), BackpressureAction::Throttle);
+        assert_eq!(bp.evaluate(10), BackpressureAction::DropOldest);
+        assert_eq!(bp.throttle_events, 1);
+        assert_eq!(bp.dropped_frames, 1);
+    }
+
+    #[test]
+    fn test_stream_transport_metrics_loss_and_jitter() {
+        let mut metrics = StreamTransportMetrics::default();
+        for _ in 0..20 {
+            metrics.record_packet();
+        }
+        metrics.record_loss(2);
+        metrics.update_jitter(30);
+        metrics.update_jitter(42);
+
+        assert_eq!(metrics.total_packets, 20);
+        assert_eq!(metrics.lost_packets, 2);
+        assert_eq!(metrics.packet_loss_percent(), 10);
+        assert!(metrics.jitter_ms > 0);
     }
 
     // ─── MACRO-012: PendingCommandQueue ────────────────────────────────────

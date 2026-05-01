@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from typing import Any
+from http.client import RemoteDisconnected
 from urllib import error
 from unittest.mock import patch
 
@@ -40,6 +41,23 @@ class TestLeonClient(unittest.TestCase):
         with patch("src.assistant.leon_client.request.urlopen", return_value=_FakeResponse(payload)):
             self.assertEqual(client.ask("salut"), "premiere reponse")
 
+    def test_ask_supports_messages_text_format(self) -> None:
+        client = LeonClient(base_url="http://localhost:1337")
+        payload = '{"messages":[{"text":"Bonjour depuis messages"}]}'
+        with patch("src.assistant.leon_client.request.urlopen", return_value=_FakeResponse(payload)):
+            self.assertEqual(client.ask("salut"), "Bonjour depuis messages")
+
+    def test_ask_supports_direct_output_field(self) -> None:
+        client = LeonClient(base_url="http://localhost:1337")
+        payload = '{"output":"Sortie Leon"}'
+        with patch("src.assistant.leon_client.request.urlopen", return_value=_FakeResponse(payload)):
+            self.assertEqual(client.ask("salut"), "Sortie Leon")
+
+    def test_ask_supports_raw_text_response(self) -> None:
+        client = LeonClient(base_url="http://localhost:1337")
+        with patch("src.assistant.leon_client.request.urlopen", return_value=_FakeResponse("Reponse brute Leon")):
+            self.assertEqual(client.ask("salut"), "Reponse brute Leon")
+
     def test_ask_returns_none_on_unexpected_json_format(self) -> None:
         client = LeonClient(base_url="http://localhost:1337")
         with patch("src.assistant.leon_client.request.urlopen", return_value=_FakeResponse('{"foo":42}')):
@@ -60,6 +78,15 @@ class TestLeonClient(unittest.TestCase):
             side_effect=[error.URLError("temporary"), _FakeResponse('{"answer":"OK apres retry"}')],
         ) as mocked:
             self.assertEqual(client.ask("salut"), "OK apres retry")
+            self.assertEqual(mocked.call_count, 2)
+
+    def test_ask_retries_on_remote_disconnect(self) -> None:
+        client = LeonClient(base_url="http://localhost:1337", retry_attempts=1)
+        with patch(
+            "src.assistant.leon_client.request.urlopen",
+            side_effect=[RemoteDisconnected("closed"), _FakeResponse('{"answer":"OK"}')],
+        ) as mocked:
+            self.assertEqual(client.ask("salut"), "OK")
             self.assertEqual(mocked.call_count, 2)
 
 

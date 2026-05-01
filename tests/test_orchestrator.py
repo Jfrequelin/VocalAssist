@@ -62,6 +62,7 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(reply.source, "leon")
         self.assertEqual(reply.answer, "Reponse Leon")
         self.assertEqual(reply.routing_trace.get("route"), "leon")
+        self.assertTrue(reply.routing_trace.get("leon_attempted"))
 
     @patch("src.assistant.orchestrator.LeonClient")
     def test_unknown_handles_unavailable_leon(self, mock_leon_cls: Any) -> None:
@@ -73,6 +74,19 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(reply.source, "fallback-error")
         self.assertIn("Leon", reply.answer)
         self.assertEqual(reply.routing_trace.get("route"), "fallback-error")
+        self.assertTrue(reply.routing_trace.get("leon_attempted"))
+
+    @patch("src.assistant.orchestrator.LeonClient")
+    def test_unknown_handles_misconfigured_leon_env(self, mock_leon_cls: Any) -> None:
+        mock_leon_cls.from_env.side_effect = RuntimeError("Variable d'environnement requise manquante: LEON_API_URL")
+
+        reply = handle_message("question inconnue", use_leon_fallback=True)
+
+        self.assertEqual(reply.source, "fallback-error")
+        self.assertIn("mode local degrade", reply.answer)
+        self.assertEqual(reply.routing_trace.get("reason"), "leon_misconfigured")
+        self.assertFalse(reply.routing_trace.get("leon_attempted"))
+        self.assertIn("LEON_API_URL", str(reply.routing_trace.get("leon_error")))
 
     def test_unknown_without_fallback_is_traceable(self) -> None:
         reply = handle_message("question inconnue", use_leon_fallback=False)

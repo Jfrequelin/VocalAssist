@@ -139,6 +139,7 @@ def handle_message(
         "message": message,
         "detected_intent": intent,
         "use_leon_fallback": use_leon_fallback,
+        "leon_attempted": False,
     }
 
     if intent != "unknown":
@@ -198,6 +199,7 @@ def handle_message(
     if not LEON_CIRCUIT_BREAKER.allow_request():
         trace["route"] = "fallback-error"
         trace["reason"] = "circuit_open"
+        trace["leon_attempted"] = False
         LOGGER.warning("event=routing_decision cid=%s route=fallback-error intent=unknown reason=circuit_open", cid)
         return AssistantReply(
             intent=intent,
@@ -209,10 +211,12 @@ def handle_message(
 
     try:
         leon = LeonClient.from_env()
-    except RuntimeError:
+    except RuntimeError as exc:
         LEON_CIRCUIT_BREAKER.record_failure()
         trace["route"] = "fallback-error"
         trace["reason"] = "leon_misconfigured"
+        trace["leon_attempted"] = False
+        trace["leon_error"] = str(exc)
         trace["consecutive_failures"] = LEON_CIRCUIT_BREAKER.consecutive_failures
         LOGGER.warning(
             "event=routing_decision cid=%s route=fallback-error intent=unknown "
@@ -222,12 +226,13 @@ def handle_message(
         )
         return AssistantReply(
             intent=intent,
-            answer="Je ne comprends pas encore cette demande en local et Leon est indisponible.",
+            answer="Service distant indisponible ou mal configure. Je reste en mode local degrade.",
             source="fallback-error",
             correlation_id=cid,
             routing_trace=trace,
         )
 
+    trace["leon_attempted"] = True
     leon_answer = leon.ask(message)
     if leon_answer:
         LEON_CIRCUIT_BREAKER.record_success()
