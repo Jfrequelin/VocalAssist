@@ -177,6 +177,40 @@ pub enum SystemIntent {
     VolumeDown,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InformativeIntent {
+    Time,
+    Date,
+    Weather,
+    Temperature,
+    SystemHelp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InformativeSnapshot {
+    pub hour: u8,
+    pub minute: u8,
+    pub day: u8,
+    pub month: u8,
+    pub year: u16,
+    pub weather_summary: &'static str,
+    pub temperature_c: i8,
+}
+
+impl Default for InformativeSnapshot {
+    fn default() -> Self {
+        Self {
+            hour: 12,
+            minute: 0,
+            day: 1,
+            month: 1,
+            year: 2026,
+            weather_summary: "ciel degage",
+            temperature_c: 21,
+        }
+    }
+}
+
 /// Local audio control state (DAC/amplifier abstraction).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AudioControlState {
@@ -264,6 +298,78 @@ pub fn detect_system_intent(transcript: &str) -> Option<SystemIntent> {
     }
 
     None
+}
+
+/// Detect informative intents handled locally.
+pub fn detect_informative_intent(transcript: &str) -> Option<InformativeIntent> {
+    let normalized = normalize_ascii_lower_no_diacritics(transcript);
+    let text = normalized.as_str();
+
+    if text.contains("aide systeme") || text.contains("help system") || text.contains("help") {
+        return Some(InformativeIntent::SystemHelp);
+    }
+    if text.contains("meteo") {
+        return Some(InformativeIntent::Weather);
+    }
+    if text.contains("temperature") || text.contains("chauffage") || text.contains("thermostat") {
+        return Some(InformativeIntent::Temperature);
+    }
+    if text.contains("heure") || text.contains("time") {
+        return Some(InformativeIntent::Time);
+    }
+    if text.contains("date") || text.contains("jour") {
+        return Some(InformativeIntent::Date);
+    }
+    None
+}
+
+/// Build a local textual response for informative intents.
+pub fn build_informative_response(
+    intent: InformativeIntent,
+    snapshot: &InformativeSnapshot,
+) -> HString<160> {
+    let mut out: HString<160> = HString::new();
+    match intent {
+        InformativeIntent::Time => {
+            let _ = core::fmt::write(
+                &mut out,
+                format_args!("Il est {:02}:{:02}.", snapshot.hour, snapshot.minute),
+            );
+        }
+        InformativeIntent::Date => {
+            let _ = core::fmt::write(
+                &mut out,
+                format_args!(
+                    "Nous sommes le {:02}/{:02}/{:04}.",
+                    snapshot.day, snapshot.month, snapshot.year
+                ),
+            );
+        }
+        InformativeIntent::Weather => {
+            let _ = core::fmt::write(
+                &mut out,
+                format_args!(
+                    "Simulation meteo: {}, {} degres.",
+                    snapshot.weather_summary, snapshot.temperature_c
+                ),
+            );
+        }
+        InformativeIntent::Temperature => {
+            let _ = core::fmt::write(
+                &mut out,
+                format_args!(
+                    "Simulation climatisation: temperature ajustee a {} degres.",
+                    snapshot.temperature_c
+                ),
+            );
+        }
+        InformativeIntent::SystemHelp => {
+            let _ = out.push_str(
+                "Aide systeme: commandes critiques disponibles -> mute, volume, stop media, aide.",
+            );
+        }
+    }
+    out
 }
 
 /// Apply a local system intent on device/audio state.
@@ -777,5 +883,54 @@ mod tests {
         assert!(!audio.media_active);
         assert!(audio.stop_signal);
         assert_eq!(ctrl.state().led_state, BaseState::Idle);
+    }
+
+    #[test]
+    fn test_detect_informative_intent() {
+        assert_eq!(
+            detect_informative_intent("quelle heure est-il"),
+            Some(InformativeIntent::Time)
+        );
+        assert_eq!(
+            detect_informative_intent("donne la date"),
+            Some(InformativeIntent::Date)
+        );
+        assert_eq!(
+            detect_informative_intent("meteo aujourd'hui"),
+            Some(InformativeIntent::Weather)
+        );
+        assert_eq!(
+            detect_informative_intent("temperature du thermostat"),
+            Some(InformativeIntent::Temperature)
+        );
+        assert_eq!(
+            detect_informative_intent("aide système"),
+            Some(InformativeIntent::SystemHelp)
+        );
+    }
+
+    #[test]
+    fn test_build_informative_responses() {
+        let snapshot = InformativeSnapshot {
+            hour: 14,
+            minute: 35,
+            day: 1,
+            month: 5,
+            year: 2026,
+            weather_summary: "ciel degage",
+            temperature_c: 22,
+        };
+
+        let time = build_informative_response(InformativeIntent::Time, &snapshot);
+        assert_eq!(time.as_str(), "Il est 14:35.");
+
+        let date = build_informative_response(InformativeIntent::Date, &snapshot);
+        assert_eq!(date.as_str(), "Nous sommes le 01/05/2026.");
+
+        let weather = build_informative_response(InformativeIntent::Weather, &snapshot);
+        assert!(weather.as_str().contains("Simulation meteo"));
+
+        let help = build_informative_response(InformativeIntent::SystemHelp, &snapshot);
+        assert!(help.as_str().contains("mute, volume, stop media, aide"));
     }
 }
