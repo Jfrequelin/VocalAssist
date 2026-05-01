@@ -1,5 +1,14 @@
 # Session Summary - MVP Completion
 
+> Note: ce document est un compte-rendu historique de session (decembre 2024).
+> Pour l'état courant, se référer à `docs/MVP_STATUS.md` et `doc/tickets/INDEX.md`.
+
+## Mise a jour rapide (Mai 2026)
+
+- Tests valides: 396 passed
+- Diagnostics Pylance: 0 erreur
+- Tickets GitHub: 148 fermes / 0 ouvert
+
 **Date**: December 2024  
 **Status**: ✅ **MVP COMPLETE AND PRODUCTION READY**
 

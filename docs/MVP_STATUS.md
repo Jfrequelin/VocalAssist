@@ -1,12 +1,12 @@
 # MVP Status - Statut du Produit Minimum Viable
 
-**Date**: Décembre 2024  
-**État**: 95% complet (88/88 tests passants)
+**Date**: Mai 2026  
+**État**: MVP consolidé et validé (396/396 tests passants)
 
 ## Macros Couvertes
 
 ### ✅ MACRO-001: Activation et session vocale
-**État**: COMPLÉTÉ (T1, T2, T3 implémentés, T4 optionnel)
+**État**: COMPLÉTÉ (T1, T2, T3, T4 implémentés et validés)
 
 - **T1 - Activation**
   - ✅ `WakeWordHandler`: Extraction unifiée du wake word
@@ -29,10 +29,10 @@
   - ✅ Documentation du cycle conversationnel
   - Tests: 7 ✅
 
-- **T4 - Tests Conversationnels** (OPTIONNEL)
-  - ☐ Scénarios multi-étapes
-  - ☐ Validation des critères d'acceptation
-  - *Note*: La couverture existe via `test_simulation.py` (test scenarios)
+- **T4 - Tests Conversationnels**
+  - ✅ Scénarios multi-étapes couverts
+  - ✅ Validation des critères d'acceptation
+  - ✅ Couverture via `test_simulation.py` et tests pipeline associés
 
 ### ✅ MACRO-007: Domotique et services externes
 **État**: COMPLÉTÉ
@@ -55,6 +55,13 @@
 - ✅ Tests de validation des tickets
 - ✅ Sync GitHub (macro/epic generation)
 - ✅ Backlog publishing
+
+### ✅ Suivi backlog GitHub/local
+**État**: aligné et fermé
+
+- ✅ Backlog GitHub: 0 issue ouverte
+- ✅ Synchronisation locale: `doc/tickets` et `.tickets-local` alignés
+- ✅ Référence index: `doc/tickets/INDEX.md` (148 fermés / 0 ouverts)
 
 ## Fonctionnalités du MVP
 
@@ -89,7 +96,7 @@
 - Fermeture explicite via "exit"
 
 ### 6. Qualité
-- 88 tests unitaires passants
+- 396 tests passants
 - Correlatione IDs pour tous les appels
 - Logs structurés avec source (local/leon/provider/fallback)
 - Validation pre-commit (tickets, format)
@@ -128,16 +135,15 @@ Scenarios:
 
 ### Test Suite
 ```
-Total: 88 tests
+Total: 396 tests
 Status: 100% passing
 Categories:
-- Orchestrator: 15 tests ✅
-- Providers: 30+ tests ✅
-- Wake word handler: 10 tests ✅
-- Session manager: 7 tests ✅
-- Voice pipeline: 4 tests ✅
-- Simulation/Scenarios: 5 tests ✅
-- Other (sync, validation): 17 tests ✅
+- Orchestrator et routage ✅
+- Providers et fallback ✅
+- Wake word et session manager ✅
+- Pipeline vocal (STT/TTS/latence/erreurs) ✅
+- Simulation/scénarios/intents/slots ✅
+- Résilience, rétention, contexte et sync tickets ✅
 ```
 
 ## Commandes pour Démarrer
@@ -201,13 +207,13 @@ MUSIC_PROVIDER_BEARER_TOKEN=<token>
 
 ✅ **MVP READY FOR PRODUCTION**
 
-Tous les tickets de core functionality (T1-T3) sont implémentés, testés et documentés. 
+Tous les tickets publiés ont été traités et fermés côté GitHub.  
 Le produit est déployable et fonctionnel sur les deux modes (terminal et vocal).  
-Ticket #20 (T4) est optionnel: c'est de la documentation additionnelle de test scenarios.
+La validation courante confirme une base stable pour la suite des itérations.
 
 ### Commits Finaux
 - f7a62a4: Wake word handler + centralization
 - ccc356a: System messages normalization
 - aa65a0f: Session manager integration
 
-**88 tests OK | 0 Pylance errors | Ready to ship**
+**396 tests OK | 0 Pylance errors | 148 tickets fermés / 0 ouverts**

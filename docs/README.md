@@ -2,6 +2,13 @@
 
 Cette documentation est organisee par domaines pour faciliter la lecture et l'execution.
 
+## Statut courant (Mai 2026)
+
+- [Statut MVP consolide](MVP_STATUS.md)
+- [Cycle de session conversationnel](SESSION_CYCLE.md)
+- [Index tickets synchronises](../doc/tickets/INDEX.md)
+- [Decision materiel edge v1](decision-materiel-edge-v1.md)
+
 ## 1. Vision produit
 
 - [Cadrage produit](01-vision/product-definition.md)

@@ -1,4 +1,4 @@
-# MVP Validation Summary - DecemberAssistantVocal
+# MVP Validation Summary - AssistantVocal (May 2026)
 
 ✅ **MVP STATUS: PRODUCTION READY**
 
@@ -10,7 +10,7 @@ cd /home/rlv/Work/projects/AssistantVocal
 
 # 1. Run all tests
 python3 -m unittest discover tests -q
-# Expected: Ran 88 tests in ~1s - OK
+# Expected: 396 passed (pytest) / suite unittest verte
 
 # 2. Run terminal prototype
 python3 -m src.assistant.prototype
@@ -30,7 +30,8 @@ python3 -m src.assistant.prototype_voice
 | **MACRO-001-T3** (Session) | ✅ Done | `session_manager.py`, 7 tests, integrated |
 | **MACRO-007** (Providers) | ✅ Done | 3 providers (HA, Weather, Music), 30+ tests |
 | **MACRO-008** (Quality) | ✅ Done | Logs, circuit breaker, validation |
-| **Test Coverage** | ✅ 88/88 | 100% passing, 0.8s runtime |
+| **Backlog tickets** | ✅ Done | 148 fermés / 0 ouverts |
+| **Test Coverage** | ✅ 396/396 | 100% passing |
 | **Pylance** | ✅ 0 errors | All Python files validated |
 | **Documentation** | ✅ Complete | SESSION_CYCLE.md, MVP_STATUS.md |
 
@@ -108,15 +109,14 @@ python3 -m src.assistant.prototype_voice
 
 ### Test Quality
 ```
-Test Distribution:
-- Orchestrator: 15 tests (intent parsing, Leon integration, circuit breaker)
-- Providers: 30+ tests (HA light, weather dynamics, webhook music)
-- Wake word: 10 tests (activation, extraction, edge cases)
-- Session manager: 7 tests (start, expire, resume, activity, close)
-- Voice pipeline: 4 tests (STT/TTS mock/real)
-- Simulation: 5 tests (scenario loading, coverage validation)
-- Other: 17 tests (sync, validation, utilities)
-Total: 88/88 PASSING ✅
+Test Distribution (niveau macro):
+- Orchestrator/routage/resilience
+- Providers et fallback
+- Wake word/session
+- Pipeline vocal STT/TTS/latence
+- Scenarios/intents/slots
+- Sync tickets, retention, context management
+Total: 396/396 PASSING ✅
 ```
 
 ## Git History
@@ -149,4 +149,4 @@ Recent Commits:
 
 **Status**: ✅ MVP COMPLETE - READY FOR PRODUCTION
 
-88 tests passing | 0 Pylance errors | Full documentation | Ready to ship
+396 tests passing | 0 Pylance errors | 148 tickets fermés / 0 ouvert | Documentation à jour
