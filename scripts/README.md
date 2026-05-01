@@ -172,6 +172,23 @@ Variables utiles pour le prototype edge:
 
 Matrice de tests terrain et stratégie réseau: `docs/EDGE-NETWORK-VALIDATION.md`.
 
+## Benchmark latence vocale E2E
+
+Script reproductible pour valider le SLO de latence médiane E2E.
+
+```bash
+./.venv/bin/python scripts/benchmark_voice_latency.py
+```
+
+Sorties par défaut:
+- `docs/03-delivery/voice-latency-benchmark-latest.md`
+- `data/voice_latency_samples.latest.json`
+
+Options utiles:
+- `--input-json <fichier>`: utilise des samples fournis
+- `--sample-count <n>` et `--seed <n>`: génération synthétique reproductible
+- `--max-median-ms <ms>`: seuil SLO (défaut 1800)
+
 ### En CI/CD
 
 ```yaml

@@ -3,14 +3,18 @@ from __future__ import annotations
 import json
 import threading
 import unittest
+import base64
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import cast
 
 from src.assistant.edge_audio import (
     EdgeAudioPayload,
+    attenuate_pcm16le,
     build_edge_audio_payload,
     evaluate_edge_activation,
+    sanitize_pcm16le_if_saturated,
     send_edge_audio_payload,
+    saturation_ratio_pcm16le,
 )
 from src.assistant.edge_backend import handle_edge_audio_request
 
@@ -32,11 +36,46 @@ class TestEdgeAudio(unittest.TestCase):
         self.assertEqual(decision.reason, "accepted")
         self.assertEqual(decision.command, "quelle heure est il")
 
+    def test_edge_activation_rejects_noise_profile_after_wake_word(self) -> None:
+        decision = evaluate_edge_activation("nova aaaa aaaa aaaa", wake_word="nova")
+        self.assertFalse(decision.should_send)
+        self.assertEqual(decision.reason, "vad_rejected_noise_profile")
+
     def test_build_payload_encodes_audio(self) -> None:
         payload = build_edge_audio_payload(b"abc", device_id="esp32-01", correlation_id="cid-1")
         self.assertEqual(payload.correlation_id, "cid-1")
         self.assertEqual(payload.device_id, "esp32-01")
         self.assertEqual(payload.audio_base64, "YWJj")
+
+    def test_saturation_ratio_detects_clipping(self) -> None:
+        saturated = (32767).to_bytes(2, "little", signed=True) * 10
+        ratio = saturation_ratio_pcm16le(saturated)
+        self.assertEqual(ratio, 1.0)
+
+    def test_attenuation_reduces_pcm_amplitude(self) -> None:
+        sample = (20000).to_bytes(2, "little", signed=True)
+        attenuated = attenuate_pcm16le(sample, factor=0.5)
+        value = int.from_bytes(attenuated, "little", signed=True)
+        self.assertLess(value, 20000)
+        self.assertGreater(value, 0)
+
+    def test_build_payload_applies_auto_attenuation_when_saturated(self) -> None:
+        saturated = (32767).to_bytes(2, "little", signed=True) * 32
+        payload = build_edge_audio_payload(
+            saturated,
+            device_id="esp32-01",
+            correlation_id="cid-sat",
+            encoding="pcm16le",
+        )
+        decoded = base64.b64decode(payload.audio_base64.encode("ascii"), validate=True)
+        self.assertNotEqual(decoded, saturated)
+
+    def test_sanitize_skips_non_pcm16le_encoding(self) -> None:
+        raw = b"abc123"
+        sanitized, ratio, applied = sanitize_pcm16le_if_saturated(raw, encoding="wav")
+        self.assertEqual(sanitized, raw)
+        self.assertEqual(ratio, 0.0)
+        self.assertFalse(applied)
 
     def test_backend_accepts_valid_payload(self) -> None:
         payload = EdgeAudioPayload(
@@ -124,7 +163,7 @@ class TestEdgeAudio(unittest.TestCase):
         thread.start()
         try:
             host, port = cast(tuple[str, int], server.server_address)
-            payload = build_edge_audio_payload(b"edge-audio", device_id="esp32-edge")
+            payload = build_edge_audio_payload(b"quelle heure est il", device_id="esp32-edge")
             response = send_edge_audio_payload(
                 payload,
                 base_url=f"http://{host}:{port}",
