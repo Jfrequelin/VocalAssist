@@ -10,6 +10,8 @@ from typing import Any, cast
 
 from src.assistant.orchestrator import handle_message
 
+EDGE_AUDIO_API_VERSION = "v2"
+
 REQUIRED_FIELDS = {
     "correlation_id",
     "device_id",
@@ -28,6 +30,22 @@ ALLOW_TEXT_PROXY_FOR_PCM_ENV = "EDGE_BACKEND_ALLOW_TEXT_PROXY"
 def _allow_text_proxy_for_pcm() -> bool:
     raw = os.getenv(ALLOW_TEXT_PROXY_FOR_PCM_ENV, "true").strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+def _error(reason: str) -> tuple[int, dict[str, Any]]:
+    return 400, {
+        "status": "error",
+        "api_version": EDGE_AUDIO_API_VERSION,
+        "reason": reason,
+    }
+
+
+def _looks_like_legacy_text_proxy(command: str) -> bool:
+    if not command:
+        return False
+    if not any(ch.isalnum() for ch in command):
+        return False
+    return all(ch.isprintable() for ch in command)
 
 
 def validate_edge_audio_payload(payload: Mapping[str, Any]) -> str | None:
@@ -65,40 +83,41 @@ def handle_edge_audio_request(raw_body: bytes) -> tuple[int, dict[str, Any]]:
     try:
         parsed: Any = json.loads(raw_body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        return 400, {"status": "error", "reason": "invalid_json"}
+        return _error("invalid_json")
 
     if not isinstance(parsed, Mapping):
-        return 400, {"status": "error", "reason": "invalid_payload_type"}
+        return _error("invalid_payload_type")
 
     payload = dict(cast(Mapping[str, Any], parsed))
     validation_error = validate_edge_audio_payload(payload)
     if validation_error:
-        return 400, {"status": "error", "reason": validation_error}
+        return _error(validation_error)
 
     audio_bytes = base64.b64decode(str(payload["audio_base64"]).encode("ascii"), validate=True)
     normalized_encoding = str(payload["encoding"]).strip().lower()
+
     if normalized_encoding in TEXT_ENCODING_VALUES:
         pass
     elif normalized_encoding in PCM_ENCODING_VALUES:
         if not _allow_text_proxy_for_pcm():
-            return 400, {
-                "status": "error",
-                "reason": "unsupported_encoding",
-            }
+            return _error("unsupported_encoding")
     else:
-        return 400, {
-            "status": "error",
-            "reason": "unsupported_encoding",
-        }
+        return _error("unsupported_encoding")
 
     try:
         # Current MVP expects the edge side to forward a text command payload.
         command = audio_bytes.decode("utf-8").strip()
     except UnicodeDecodeError:
-        return 400, {"status": "error", "reason": "invalid_audio_utf8"}
+        if normalized_encoding in PCM_ENCODING_VALUES:
+            # Legacy transition mode: PCM is currently proxied as UTF-8 text command.
+            return _error("invalid_pcm_frame")
+        return _error("invalid_audio_utf8")
+
+    if normalized_encoding in PCM_ENCODING_VALUES and not _looks_like_legacy_text_proxy(command):
+        return _error("invalid_pcm_frame")
 
     if not command:
-        return 400, {"status": "error", "reason": "empty_command"}
+        return _error("empty_command")
 
     # Enable Leon fallback for unknown intents; if not configured, returns default fallback answer
     reply = handle_message(
@@ -108,8 +127,10 @@ def handle_edge_audio_request(raw_body: bytes) -> tuple[int, dict[str, Any]]:
     )
     return 200, {
         "status": "accepted",
+        "api_version": EDGE_AUDIO_API_VERSION,
         "correlation_id": str(payload["correlation_id"]),
         "received_bytes": len(audio_bytes),
+        "encoding": normalized_encoding,
         "intent": reply.intent,
         "source": reply.source,
         "answer": reply.answer,

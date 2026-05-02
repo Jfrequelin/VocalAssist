@@ -109,6 +109,7 @@ class TestEdgeAudio(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(response["status"], "accepted")
+        self.assertEqual(response["api_version"], "v2")
         self.assertEqual(response["correlation_id"], "cid-2")
         self.assertEqual(response["intent"], "time")
         self.assertEqual(response["source"], "local")
@@ -118,6 +119,7 @@ class TestEdgeAudio(unittest.TestCase):
         status, response = handle_edge_audio_request(b"{}")
         self.assertEqual(status, 400)
         self.assertEqual(response["status"], "error")
+        self.assertEqual(response["api_version"], "v2")
 
     def test_edge_to_backend_loop(self) -> None:
         class _Handler(BaseHTTPRequestHandler):
@@ -219,7 +221,7 @@ class TestEdgeAudio(unittest.TestCase):
 
         self.assertEqual(status, 400)
         self.assertEqual(response["status"], "error")
-        self.assertEqual(response["reason"], "invalid_audio_utf8")
+        self.assertEqual(response["reason"], "invalid_pcm_frame")
 
     def test_backend_rejects_unsupported_encoding(self) -> None:
         payload = EdgeAudioPayload(
@@ -271,6 +273,24 @@ class TestEdgeAudio(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(response["status"], "error")
         self.assertEqual(response["reason"], "unsupported_encoding")
+
+    def test_backend_rejects_odd_length_pcm_frame(self) -> None:
+        payload = EdgeAudioPayload(
+            correlation_id="cid-pcm-odd",
+            device_id="esp32-01",
+            timestamp_ms=123,
+            sample_rate_hz=16000,
+            channels=1,
+            encoding="pcm16le",
+            audio_base64="AQID",
+        )
+
+        status, response = handle_edge_audio_request(json.dumps(payload.to_dict()).encode("utf-8"))
+
+        self.assertEqual(status, 400)
+        self.assertEqual(response["status"], "error")
+        self.assertEqual(response["api_version"], "v2")
+        self.assertEqual(response["reason"], "invalid_pcm_frame")
 
 
 if __name__ == "__main__":

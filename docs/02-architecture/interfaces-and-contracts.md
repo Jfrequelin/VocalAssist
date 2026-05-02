@@ -2,6 +2,76 @@
 
 ## Contrat Edge -> Serveur (commande vocale)
 
+### Endpoint `POST /edge/audio` - Contrat v2 (migration PCM16LE)
+
+Payload v2:
+
+```json
+{
+	"correlation_id": "cid-123",
+	"device_id": "edge-001",
+	"timestamp_ms": 1730000000000,
+	"sample_rate_hz": 16000,
+	"channels": 1,
+	"encoding": "pcm16le",
+	"audio_base64": "..."
+}
+```
+
+Encodages acceptes:
+- `pcm16le`
+- `pcm_s16le`
+
+Compatibilite legacy (transitoire):
+- `utf8`, `utf-8`, `text`
+- active uniquement pour migration progressive du mode historique texte-proxy.
+
+Flag de compatibilite:
+- `EDGE_BACKEND_ALLOW_TEXT_PROXY=true|false`
+- `true` (defaut): autorise temporairement le mode texte-proxy pour `pcm16le|pcm_s16le`.
+- `false`: rejette ce mode transitoire avec `unsupported_encoding`.
+
+Erreurs standardisees v2 (`status=error`):
+- `invalid_json`
+- `invalid_payload_type`
+- `missing_fields:<...>`
+- `invalid_correlation_id`
+- `invalid_device_id`
+- `invalid_sample_rate`
+- `invalid_channels`
+- `invalid_encoding`
+- `invalid_audio_base64`
+- `empty_audio`
+- `unsupported_encoding`
+- `invalid_pcm_frame`
+- `invalid_audio_utf8`
+- `empty_command`
+
+Structure de reponse erreur:
+
+```json
+{
+	"status": "error",
+	"api_version": "v2",
+	"reason": "invalid_pcm_frame"
+}
+```
+
+Structure de reponse succes:
+
+```json
+{
+	"status": "accepted",
+	"api_version": "v2",
+	"correlation_id": "cid-123",
+	"received_bytes": 3200,
+	"encoding": "pcm16le",
+	"intent": "time",
+	"source": "local",
+	"answer": "Il est 14:03."
+}
+```
+
 ### Format canonique firmware <-> assistant
 
 Le firmware edge doit converger vers une enveloppe unique pour tous les types de donnees:
