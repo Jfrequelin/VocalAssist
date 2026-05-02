@@ -28,6 +28,7 @@ Cette documentation est organisee par domaines pour faciliter la lecture et l'ex
 
 - [Standards de code](04-engineering/coding-guidelines.md)
 - [Strategie de test et KPI](04-engineering/testing-and-kpi.md)
+- [Base de test firmware](04-engineering/testing-base-firmware.md)
 
 ## 5. Recherche et benchmark
 

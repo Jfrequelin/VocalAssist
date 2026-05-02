@@ -22,6 +22,29 @@ python main.py --mode simulate
 python main.py --mode prototype
 python main.py --mode prototype-voice
 python -m unittest discover -s tests -p "test_*.py"
+python scripts/run_base_testbench.py
+```
+
+## Base de test firmware (peripheriques abstraits)
+
+Une base de test desktop est disponible pour valider le format d'echange
+avec l'assistant (`POST /edge/audio`, contrat v2), en utilisant des
+peripheriques abstraits:
+
+- micro desktop simule (entree clavier)
+- haut-parleur desktop (sortie console)
+- ecran mock/console pour les etats firmware
+
+Commande:
+
+```bash
+python scripts/run_base_testbench.py
+```
+
+Exemple d'entree:
+
+```text
+nova quelle heure est-il
 ```
 
 ## Packaging operable (docker-compose)
