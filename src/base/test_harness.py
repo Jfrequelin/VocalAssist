@@ -70,6 +70,8 @@ class AssistantFirmwareTestBench:
     ) -> None:
         self._screen = screen
         self._microphone = microphone
+        self._wake_word = config.wake_word.strip().lower()
+        self._awaiting_followup_command = False
         self._recording_transport = RecordingTransport(transport)
         self._runtime = EdgeRuntime(
             config=config,
@@ -94,13 +96,28 @@ class AssistantFirmwareTestBench:
         self._recording_transport.last_response = None
 
         if transcript.startswith("/"):
+            self._awaiting_followup_command = False
             return self._handle_control_command(transcript)
 
-        self._screen.show(state="listening", message=f"heard={transcript}")
+        effective_transcript = transcript
+        if (
+            self._awaiting_followup_command
+            and transcript.strip()
+            and not transcript.strip().lower().startswith(self._wake_word)
+        ):
+            effective_transcript = f"{self._wake_word} {transcript.strip()}"
+
+        self._screen.show(state="listening", message=f"heard={effective_transcript}")
         result = self._runtime.process_audio(
-            transcript=transcript,
+            transcript=effective_transcript,
             audio_bytes=captured.audio_bytes,
         )
+
+        if result.reason == "wake_word_without_command":
+            self._awaiting_followup_command = True
+            self._screen.show(state="listening", message="wake_word_ok: en attente de commande")
+        elif result.reason != "empty_audio":
+            self._awaiting_followup_command = False
 
         current_state = self._runtime.state_machine.runtime.state.value
         self._screen.show(state=current_state, message=f"result={result.reason}")
@@ -114,7 +131,7 @@ class AssistantFirmwareTestBench:
             response_payload = self._recording_transport.last_response.payload
 
         return ExchangeRecord(
-            transcript=transcript,
+            transcript=effective_transcript,
             runtime_result=result,
             request_payload=request_payload,
             response_payload=response_payload,

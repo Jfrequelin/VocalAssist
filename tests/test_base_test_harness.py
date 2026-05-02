@@ -37,7 +37,11 @@ class _SpeakerSpy:
 
 class TestAssistantFirmwareTestBench(unittest.TestCase):
     def test_records_exchange_in_v2_shape(self) -> None:
-        config = EdgeBaseConfig(device_id="edge-01", server_base_url="http://127.0.0.1:8081")
+        config = EdgeBaseConfig(
+            device_id="edge-01",
+            server_base_url="http://127.0.0.1:8081",
+            min_voice_chars=4,
+        )
         microphone = StaticMicrophoneBuffer(
             [
                 CapturedAudio(
@@ -150,6 +154,43 @@ class TestAssistantFirmwareTestBench(unittest.TestCase):
         self.assertEqual(record.runtime_result.reason, "control_mute_on")
         self.assertIsNone(record.request_payload)
         self.assertIsNone(record.response_payload)
+
+    def test_two_step_wake_word_then_followup_command_is_sent(self) -> None:
+        config = EdgeBaseConfig(
+            device_id="edge-01",
+            server_base_url="http://127.0.0.1:8081",
+            min_voice_chars=4,
+        )
+        microphone = StaticMicrophoneBuffer(
+            [
+                CapturedAudio(transcript="nova", audio_bytes=b"seg-1"),
+                CapturedAudio(transcript="quelle heure est-il", audio_bytes=b"seg-2"),
+            ]
+        )
+        speaker = _SpeakerSpy()
+        screen = MockScreenAdapter()
+
+        bench = AssistantFirmwareTestBench(
+            config=config,
+            transport=_TransportOk(),
+            microphone=microphone,
+            speaker=speaker,
+            screen=screen,
+        )
+
+        first = bench.run_once()
+        second = bench.run_once()
+
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        if first is None or second is None:
+            return
+
+        self.assertFalse(first.runtime_result.sent)
+        self.assertEqual(first.runtime_result.reason, "wake_word_without_command")
+        self.assertTrue(second.runtime_result.sent)
+        self.assertEqual(second.runtime_result.reason, "accepted")
+        self.assertTrue(second.transcript.lower().startswith("nova "))
 
 
 if __name__ == "__main__":
