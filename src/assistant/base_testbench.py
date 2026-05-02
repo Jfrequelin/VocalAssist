@@ -6,6 +6,7 @@ import platform
 import shutil
 from dataclasses import dataclass
 from time import perf_counter
+from time import time
 from typing import Any
 
 from src.base import (
@@ -37,6 +38,11 @@ class TestbenchMetrics:
     total_latency_ms: float = 0.0
     last_intent: str = "-"
     last_source: str = "-"
+    timeline: list[dict[str, Any]] | None = None
+
+    def __post_init__(self) -> None:
+        if self.timeline is None:
+            self.timeline = []
 
     @property
     def avg_latency_ms(self) -> float:
@@ -71,14 +77,58 @@ def update_metrics(
         if isinstance(source, str) and source.strip():
             metrics.last_source = source.strip()
 
+    timeline = metrics.timeline if metrics.timeline is not None else []
+    timeline.append(
+        {
+            "timestamp_ms": int(time() * 1000),
+            "sent": sent,
+            "reason": reason,
+            "latency_ms": round(max(0.0, latency_ms), 2),
+            "status": (response_payload or {}).get("status") if isinstance(response_payload, dict) else None,
+            "intent": (response_payload or {}).get("intent") if isinstance(response_payload, dict) else None,
+            "source": (response_payload or {}).get("source") if isinstance(response_payload, dict) else None,
+        }
+    )
+    metrics.timeline = timeline
+
 
 def format_metrics_line(metrics: TestbenchMetrics) -> str:
     return (
         f"metrics: turns={metrics.total_turns}, sent={metrics.sent_turns}, "
         f"rejected={metrics.rejected_turns}, backend_errors={metrics.backend_errors}, "
         f"avg_latency_ms={metrics.avg_latency_ms:.1f}, "
-        f"last_intent={metrics.last_intent}, last_source={metrics.last_source}"
+        f"last_intent={metrics.last_intent}, last_source={metrics.last_source}, "
+        f"timeline_events={len(metrics.timeline or [])}"
     )
+
+
+def build_session_snapshot(metrics: TestbenchMetrics) -> dict[str, Any]:
+    return {
+        "summary": {
+            "total_turns": metrics.total_turns,
+            "sent_turns": metrics.sent_turns,
+            "rejected_turns": metrics.rejected_turns,
+            "backend_errors": metrics.backend_errors,
+            "avg_latency_ms": round(metrics.avg_latency_ms, 2),
+            "last_intent": metrics.last_intent,
+            "last_source": metrics.last_source,
+        },
+        "timeline": list(metrics.timeline or []),
+    }
+
+
+def maybe_export_snapshot(metrics: TestbenchMetrics) -> str | None:
+    export_path = os.getenv("ASSISTANT_TESTBENCH_EXPORT_PATH", "").strip()
+    if not export_path:
+        return None
+
+    snapshot = build_session_snapshot(metrics)
+    parent = os.path.dirname(export_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(export_path, "w", encoding="utf-8") as handle:
+        json.dump(snapshot, handle, ensure_ascii=True, indent=2)
+    return export_path
 
 
 def summarize_turn(
@@ -287,3 +337,7 @@ def run_base_testbench() -> None:
                 f"intent={record.response_payload.get('intent')}"
             )
             print(format_metrics_line(metrics))
+
+        exported = maybe_export_snapshot(metrics)
+        if exported is not None:
+            print(f"snapshot_export: {exported}")

@@ -53,6 +53,7 @@ Variables de simulation complete:
 - `ASSISTANT_TESTBENCH_PERIPHERALS=auto|system|mock` (defaut `auto`)
 - `ASSISTANT_TESTBENCH_SCREEN=auto|tk|console` (defaut `auto`)
 - `TESTBENCH_MIC_SECONDS` duree de capture arecord (defaut `3`)
+- `ASSISTANT_TESTBENCH_EXPORT_PATH` chemin d'export d'un snapshot JSON de session
 
 Commandes runtime testbench:
 

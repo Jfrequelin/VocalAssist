@@ -68,6 +68,8 @@ Indicateurs runtime exposes:
 - latence par tour (ms)
 - intent/source de la reponse backend
 - compteurs cumules (turns, sent, rejected, backend_errors, avg_latency_ms)
+- timeline horodatee des evenements de session
+- export JSON de fin de session si `ASSISTANT_TESTBENCH_EXPORT_PATH` est defini
 
 Exemple d'entree micro simulee:
 
@@ -94,6 +96,7 @@ Arret:
 - `ASSISTANT_TESTBENCH_PERIPHERALS`
 - `ASSISTANT_TESTBENCH_SCREEN`
 - `TESTBENCH_MIC_SECONDS`
+- `ASSISTANT_TESTBENCH_EXPORT_PATH`
 
 ## Couverture de test
 

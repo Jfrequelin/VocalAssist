@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
 from typing import Any
 from unittest.mock import patch
@@ -9,9 +10,11 @@ from src.assistant.base_testbench import (
     InProcessEdgeBackendTransport,
     TestbenchMetrics,
     build_microphone,
+    build_session_snapshot,
     build_screen,
     build_transport,
     format_metrics_line,
+    maybe_export_snapshot,
     summarize_turn,
     update_metrics,
 )
@@ -100,6 +103,44 @@ class TestBaseTestbenchMode(unittest.TestCase):
         self.assertIn("intent=weather", turn_summary)
         self.assertIn("source=local", turn_summary)
         self.assertIn("avg_latency_ms=14.0", metrics_line)
+
+    def test_timeline_event_is_recorded(self) -> None:
+        metrics = TestbenchMetrics()
+
+        update_metrics(
+            metrics,
+            sent=True,
+            reason="accepted",
+            latency_ms=11.2,
+            response_payload={"status": "accepted", "intent": "time", "source": "local"},
+        )
+
+        self.assertIsNotNone(metrics.timeline)
+        if metrics.timeline is None:
+            return
+        self.assertEqual(len(metrics.timeline), 1)
+        self.assertEqual(metrics.timeline[0].get("reason"), "accepted")
+        self.assertEqual(metrics.timeline[0].get("intent"), "time")
+
+    def test_export_snapshot_writes_json_when_path_configured(self) -> None:
+        metrics = TestbenchMetrics(total_turns=1, sent_turns=1, total_latency_ms=9.0)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = os.path.join(temp_dir, "snapshot.json")
+            with patch.dict(os.environ, {"ASSISTANT_TESTBENCH_EXPORT_PATH": target}, clear=False):
+                exported = maybe_export_snapshot(metrics)
+
+            self.assertEqual(exported, target)
+            self.assertTrue(os.path.exists(target))
+
+    def test_build_session_snapshot_contains_summary_and_timeline(self) -> None:
+        metrics = TestbenchMetrics(total_turns=2, sent_turns=1, rejected_turns=1, total_latency_ms=40.0)
+        metrics.timeline = [{"reason": "accepted"}, {"reason": "wake_word_missing"}]
+
+        snapshot = build_session_snapshot(metrics)
+
+        self.assertIn("summary", snapshot)
+        self.assertIn("timeline", snapshot)
+        self.assertEqual(len(snapshot["timeline"]), 2)
 
 
 if __name__ == "__main__":

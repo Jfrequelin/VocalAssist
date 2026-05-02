@@ -17,6 +17,7 @@ Le format suit une structure simple inspiree de Keep a Changelog.
 - Mode testbench etendu pour simuler une base complete sur Linux (transport local in-process, peripheriques systeme, commandes de controle runtime).
 - Ecran Tk optionnel pour visualiser l'etat de la base Linux en temps reel dans le mode testbench.
 - Indicateurs runtime du testbench (latence, intent/source, compteurs cumules) affiches en console et ecran.
+- Export JSON optionnel du testbench avec resume de session et timeline horodatee des evenements.
 
 ## [2026-05-02]
 
