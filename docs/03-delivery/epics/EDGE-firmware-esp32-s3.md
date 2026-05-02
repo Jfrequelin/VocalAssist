@@ -15,6 +15,7 @@ Implémenter le firmware complet pour le satellite edge ESP32-S3:
 - Wake word detection local (précision ≥ 95%)
 - Voice Activity Detection (VAD)
 - Client HTTP vers serveur central
+- Format d'echange unifie firmware <-> assistant pour audio, texte, image, variables et binaire
 - Lecture flux audio TTS retourné du serveur
 - Gestion état appareil (LED, bouton mute, écran, tactile)
 - Reconnexion automatique + exponential backoff
@@ -35,6 +36,7 @@ Implémenter le firmware complet pour le satellite edge ESP32-S3:
 - confirmation visuelle des commandes locales critiques
 - exploitation du tactile pour mute, volume, stop, navigation simple
 - journaux et diagnostics pouvant evoluer vers stockage TF
+- format canonique d'echange reutilisable par tous les peripheriques HAL
 
 ---
 
@@ -50,6 +52,8 @@ Implémenter le firmware complet pour le satellite edge ESP32-S3:
 - [ ] Ecran affiche l'etat edge et les retours utilisateur essentiels
 - [ ] Tactile permet au moins une interaction locale simple (mute/stop/menu)
 - [ ] Reconnexion auto + logs (fichier SD ou UART)
+- [ ] Le firmware produit un format d'echange unique par type de donnees (`audio`, `text`, `image`, `variable`, `binary`)
+- [ ] Le format audio historique reste compatible avec l'assistant existant
 - [ ] 0 crash sur 1000+ interactions de test
 
 ---
@@ -88,7 +92,8 @@ Implémenter le firmware complet pour le satellite edge ESP32-S3:
 - [ ] Send audio chunks + correlation_id
 - [ ] Retry logic: 3 tentatives max + backoff (1s, 2s, 4s)
 - [ ] Timeout strict 2.5s par requête
-- [ ] Payload: `{correlation_id, audio_b64, compression, samplerate}`
+- [ ] Payload canonique: enveloppe commune `{correlation_id, device_id, timestamp_ms, kind, payload}`
+- [ ] Compatibilite audio: mapping explicite vers le contrat historique `EdgeAudioRequest`
 
 **EDGE-06**: TTS playback  
 - [ ] Reçoit audio/wav stream en chunks

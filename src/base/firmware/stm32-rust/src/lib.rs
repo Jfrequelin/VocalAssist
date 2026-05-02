@@ -2,8 +2,14 @@
 //!
 //! Portable runtime for edge audio processing with wake word detection,
 //! VAD filtering, and device state management.
+//!
+//! # Modules
+//!
+//! - [`hal`] — couches d'abstraction matériel (un fichier par périphérique)
 
 #![cfg_attr(not(feature = "std"), no_std)]
+
+pub mod hal;
 
 use core::str;
 use heapless::Deque;
@@ -325,9 +331,10 @@ impl PiperTtsEngine {
 
         if self.cache_enabled {
             let mut key: HString<128> = HString::new();
-            let _ = key.push_str(trimmed);
-            self.cached_text = Some(key);
-            self.cached_audio = Some(audio.clone());
+            if key.push_str(trimmed).is_ok() {
+                self.cached_text = Some(key);
+                self.cached_audio = Some(audio.clone());
+            }
         }
 
         Ok(audio)
@@ -1206,7 +1213,7 @@ impl Default for PendingCommandQueue {
 impl PendingCommandQueue {
     pub fn enqueue(&mut self, cmd: &str) -> Result<(), ()> {
         let mut s: HString<128> = HString::new();
-        let _ = s.push_str(cmd);
+        s.push_str(cmd).map_err(|_| ())?;
         self.queue.push_back(s).map_err(|_| ())
     }
 
@@ -1484,7 +1491,7 @@ impl EdgePipeline {
                     if self.audio_ctrl.muted {
                         "Mode muet active."
                     } else {
-                        "Son reactived."
+                        "Son reactive."
                     }
                 }
                 SystemIntent::VolumeUp => "Volume augmente.",

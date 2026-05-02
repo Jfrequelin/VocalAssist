@@ -32,10 +32,25 @@
 
 1. Wake word detecte sur edge.
 2. Commande locale critique? Execution immediate.
-3. Sinon envoi audio/texte au serveur.
-4. Serveur route local intent ou Leon.
-5. Serveur renvoie reponse + action eventuelle.
+3. Sinon encapsulation dans une enveloppe canonique firmware `AssistantPacket` avec `kind` et `payload` type.
+4. Envoi au serveur du format canonique ou de son mapping compatible (`EdgeAudioRequest` pour l'audio historique).
+5. Serveur route local intent ou Leon en fonction du `kind` recu puis produit une reponse dans la meme abstraction.
 6. Edge joue audio localement et expose les controles stop/pause/volume.
+
+## Abstraction echange de donnees
+
+Le firmware utilise une couche unique d'echange pour normaliser les donnees issues des HAL:
+
+- `audio`: microphone, playback, transport audio
+- `image`: rendu LCD, captures ou assets d'interface
+- `text`: transcription, messages UI, reponses courtes
+- `variable`: etats runtime (mute, battery_pct, ui_state, wifi_rssi)
+- `binary`: payload technique ou extension future
+
+Cette abstraction evite les contrats ad hoc par peripherique et permet:
+- de garder un pipeline uniforme cote firmware;
+- de simplifier le routage cote assistant;
+- de faire evoluer les peripheriques (ecran, tactile, telemetrie) sans redefinir un protocole complet.
 
 ## Capacites hardware exploitable sur la cible retenue
 
@@ -49,4 +64,6 @@
 ## Etat actuel d'exploitation logicielle
 
 - deja modele: audio edge, wake word, VAD minimal, TTS locale, LED/mute/bouton, reconnexion simple
-- non encore modele dans ce depot: ecran, tactile, batterie, RTC, TF
+- abstraction d'echange canonique maintenant modelee cote firmware Rust pour audio, image, texte, variable et binaire
+- non encore consommee completement cote assistant Python: image, variable, binaire generique
+- non encore modele dans ce depot: ecran, tactile, batterie, RTC, TF comme fonctions applicatives completes
