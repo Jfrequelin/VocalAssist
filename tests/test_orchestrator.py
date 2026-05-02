@@ -88,6 +88,18 @@ class TestOrchestrator(unittest.TestCase):
         self.assertFalse(reply.routing_trace.get("leon_attempted"))
         self.assertIn("LEON_API_URL", str(reply.routing_trace.get("leon_error")))
 
+    @patch("src.assistant.orchestrator.LeonClient")
+    def test_misconfigured_leon_does_not_open_circuit(self, mock_leon_cls: Any) -> None:
+        LEON_CIRCUIT_BREAKER.failure_threshold = 1
+        mock_leon_cls.from_env.side_effect = RuntimeError("Variable d'environnement requise manquante: LEON_API_URL")
+
+        first = handle_message("question inconnue 1", use_leon_fallback=True)
+        second = handle_message("question inconnue 2", use_leon_fallback=True)
+
+        self.assertEqual(first.routing_trace.get("reason"), "leon_misconfigured")
+        self.assertEqual(second.routing_trace.get("reason"), "leon_misconfigured")
+        self.assertEqual(LEON_CIRCUIT_BREAKER.consecutive_failures, 0)
+
     def test_unknown_without_fallback_is_traceable(self) -> None:
         reply = handle_message("question inconnue", use_leon_fallback=False)
 

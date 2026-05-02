@@ -12,6 +12,16 @@ class AudioCaptureConfig:
     chunk_size_bytes: int = 640
     max_buffer_chunks: int = 50
 
+    def __post_init__(self) -> None:
+        if self.sample_rate_hz <= 0:
+            raise ValueError("sample_rate_hz doit etre > 0")
+        if self.channels <= 0:
+            raise ValueError("channels doit etre > 0")
+        if self.chunk_size_bytes <= 0:
+            raise ValueError("chunk_size_bytes doit etre > 0")
+        if self.max_buffer_chunks <= 0:
+            raise ValueError("max_buffer_chunks doit etre > 0")
+
 
 @dataclass(frozen=True)
 class AudioCaptureStats:

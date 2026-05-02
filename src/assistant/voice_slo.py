@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 from statistics import median
 from typing import Sequence
 
@@ -23,7 +24,7 @@ def compute_latency_summary(samples: Sequence[VoiceLatencySample]) -> dict[str, 
 
     e2e = [sample.e2e_ms for sample in samples]
     e2e_sorted = sorted(e2e)
-    idx_95 = max(0, int((len(e2e_sorted) - 1) * 0.95))
+    idx_95 = min(len(e2e_sorted) - 1, max(0, ceil(0.95 * len(e2e_sorted)) - 1))
 
     return {
         "sample_count": float(len(samples)),

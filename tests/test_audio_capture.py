@@ -30,6 +30,14 @@ class TestCircularAudioBuffer(unittest.TestCase):
         buffer.push_chunk(b"ABCDEFG")
         self.assertEqual(buffer.drain(), b"DEFG")
 
+    def test_config_rejects_non_positive_chunk_size(self) -> None:
+        with self.assertRaises(ValueError):
+            AudioCaptureConfig(chunk_size_bytes=0)
+
+    def test_config_rejects_non_positive_max_buffer_chunks(self) -> None:
+        with self.assertRaises(ValueError):
+            AudioCaptureConfig(max_buffer_chunks=0)
+
 
 if __name__ == "__main__":
     unittest.main()

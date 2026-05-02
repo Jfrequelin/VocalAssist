@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import os
 from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, cast
@@ -18,6 +19,15 @@ REQUIRED_FIELDS = {
     "encoding",
     "audio_base64",
 }
+
+TEXT_ENCODING_VALUES = {"utf8", "utf-8", "text"}
+PCM_ENCODING_VALUES = {"pcm16le", "pcm_s16le"}
+ALLOW_TEXT_PROXY_FOR_PCM_ENV = "EDGE_BACKEND_ALLOW_TEXT_PROXY"
+
+
+def _allow_text_proxy_for_pcm() -> bool:
+    raw = os.getenv(ALLOW_TEXT_PROXY_FOR_PCM_ENV, "true").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def validate_edge_audio_payload(payload: Mapping[str, Any]) -> str | None:
@@ -66,7 +76,23 @@ def handle_edge_audio_request(raw_body: bytes) -> tuple[int, dict[str, Any]]:
         return 400, {"status": "error", "reason": validation_error}
 
     audio_bytes = base64.b64decode(str(payload["audio_base64"]).encode("ascii"), validate=True)
+    normalized_encoding = str(payload["encoding"]).strip().lower()
+    if normalized_encoding in TEXT_ENCODING_VALUES:
+        pass
+    elif normalized_encoding in PCM_ENCODING_VALUES:
+        if not _allow_text_proxy_for_pcm():
+            return 400, {
+                "status": "error",
+                "reason": "unsupported_encoding",
+            }
+    else:
+        return 400, {
+            "status": "error",
+            "reason": "unsupported_encoding",
+        }
+
     try:
+        # Current MVP expects the edge side to forward a text command payload.
         command = audio_bytes.decode("utf-8").strip()
     except UnicodeDecodeError:
         return 400, {"status": "error", "reason": "invalid_audio_utf8"}

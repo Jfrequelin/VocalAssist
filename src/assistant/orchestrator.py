@@ -212,17 +212,13 @@ def handle_message(
     try:
         leon = LeonClient.from_env()
     except RuntimeError as exc:
-        LEON_CIRCUIT_BREAKER.record_failure()
         trace["route"] = "fallback-error"
         trace["reason"] = "leon_misconfigured"
         trace["leon_attempted"] = False
         trace["leon_error"] = str(exc)
-        trace["consecutive_failures"] = LEON_CIRCUIT_BREAKER.consecutive_failures
         LOGGER.warning(
-            "event=routing_decision cid=%s route=fallback-error intent=unknown "
-            "reason=leon_misconfigured failures=%s",
+            "event=routing_decision cid=%s route=fallback-error intent=unknown reason=leon_misconfigured",
             cid,
-            LEON_CIRCUIT_BREAKER.consecutive_failures,
         )
         return AssistantReply(
             intent=intent,

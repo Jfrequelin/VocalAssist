@@ -25,6 +25,20 @@ Le script n'a pas de dependance Python externe obligatoire.
 
 ## 🚀 Utilisation
 
+## Smoke-test deployment docker-compose
+
+Depuis la racine du repo:
+
+```bash
+./scripts/smoke-test.sh
+```
+
+Avec cleanup automatique:
+
+```bash
+./scripts/smoke-test.sh --teardown
+```
+
 ### Synchroniser tous les tickets ouverts (par défaut)
 
 ```bash

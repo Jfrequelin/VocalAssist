@@ -24,6 +24,35 @@ python main.py --mode prototype-voice
 python -m unittest discover -s tests -p "test_*.py"
 ```
 
+## Packaging operable (docker-compose)
+
+Stack de demo reproductible:
+- `assistant-backend` (endpoint `POST /edge/audio`, publie en local sur `http://127.0.0.1:18081`)
+- `leon-mock` (endpoint `POST /api/query`)
+- `ha-mock` (endpoints Home Assistant critiques)
+
+Demarrage:
+
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+Smoke-test post-deploiement:
+
+```bash
+./scripts/smoke-test.sh
+```
+
+Runbook d'installation/debug:
+- `docs/runbook-docker-compose.md`
+
+Arret:
+
+```bash
+docker compose down
+```
+
 ## Fallback Leon dans la boucle
 
 Le prototype utilise d'abord les intents locaux. Si la demande est inconnue, il tente un fallback vers Leon via HTTP.

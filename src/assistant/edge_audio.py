@@ -46,6 +46,7 @@ def evaluate_edge_activation(
     min_voice_chars: int = 6,
 ) -> EdgeActivationDecision:
     text = transcript.strip().lower()
+    normalized_wake_word = wake_word.strip().lower()
     if not text:
         return EdgeActivationDecision(should_send=False, reason="empty_audio")
 
@@ -54,10 +55,13 @@ def evaluate_edge_activation(
     if alnum_count < min_voice_chars:
         return EdgeActivationDecision(should_send=False, reason="vad_rejected_low_voice")
 
-    if not text.startswith(wake_word):
+    if not normalized_wake_word:
         return EdgeActivationDecision(should_send=False, reason="wake_word_missing")
 
-    command = text[len(wake_word) :].strip()
+    if not text.startswith(normalized_wake_word):
+        return EdgeActivationDecision(should_send=False, reason="wake_word_missing")
+
+    command = text[len(normalized_wake_word) :].strip()
     if not command:
         return EdgeActivationDecision(should_send=False, reason="wake_word_without_command")
 
@@ -151,6 +155,8 @@ def saturation_ratio_pcm16le(audio_bytes: bytes, *, sample_limit: int = 32760) -
 def attenuate_pcm16le(audio_bytes: bytes, *, factor: float = 0.8) -> bytes:
     if factor <= 0:
         raise ValueError("factor doit etre > 0")
+    if len(audio_bytes) % 2 != 0:
+        raise ValueError("audio_bytes pcm16le doit avoir une longueur paire")
 
     sample_count = len(audio_bytes) // 2
     if sample_count == 0:
@@ -164,9 +170,6 @@ def attenuate_pcm16le(audio_bytes: bytes, *, factor: float = 0.8) -> bytes:
         scaled = max(-32768, min(32767, scaled))
         struct.pack_into("<h", out, idx * 2, scaled)
 
-    if len(audio_bytes) % 2 == 1:
-        out.extend(audio_bytes[-1:])
-
     return bytes(out)
 
 
@@ -179,6 +182,10 @@ def sanitize_pcm16le_if_saturated(
 ) -> tuple[bytes, float, bool]:
     normalized_encoding = encoding.strip().lower()
     if normalized_encoding not in {"pcm16le", "pcm_s16le"}:
+        return audio_bytes, 0.0, False
+
+    if len(audio_bytes) % 2 != 0:
+        # Corrupted PCM16LE frame: skip attenuation and keep payload unchanged.
         return audio_bytes, 0.0, False
 
     ratio = saturation_ratio_pcm16le(audio_bytes)

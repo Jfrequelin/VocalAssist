@@ -1,0 +1,56 @@
+services:
+  assistant-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: assistant-backend
+    environment:
+      LEON_API_URL: http://leon-mock:1337
+      LEON_API_ENDPOINT: /api/query
+      LEON_TIMEOUT_SECONDS: "5"
+      LEON_RETRY_ATTEMPTS: "1"
+      LEON_RETRY_BACKOFF_SECONDS: "0"
+      HOME_ASSISTANT_URL: http://ha-mock:8123
+      HOME_ASSISTANT_TOKEN: demo-token
+      HOME_ASSISTANT_TIMEOUT_SECONDS: "5"
+      HOME_ASSISTANT_LIGHT_SALON: light.salon
+      HOME_ASSISTANT_CLIMATE_ENTITY: climate.salon
+      HOME_ASSISTANT_SCENE_SOIREE: scene.soiree
+    depends_on:
+      leon-mock:
+        condition: service_healthy
+      ha-mock:
+        condition: service_healthy
+    ports:
+      - "18081:8081"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 8081), 2); s.close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+
+  leon-mock:
+    image: python:3.12-slim
+    container_name: leon-mock
+    working_dir: /app
+    volumes:
+      - ./:/app:ro
+    command: ["python", "scripts/leon_mock_server.py", "--host", "0.0.0.0", "--port", "1337"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:1337/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  ha-mock:
+    image: python:3.12-slim
+    container_name: ha-mock
+    working_dir: /app
+    volumes:
+      - ./:/app:ro
+    command: ["python", "scripts/home_assistant_mock_server.py", "--host", "0.0.0.0", "--port", "8123"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8123/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12

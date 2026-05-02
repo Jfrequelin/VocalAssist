@@ -6,6 +6,7 @@ import unittest
 import base64
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import cast
+from unittest.mock import patch
 
 from src.assistant.edge_audio import (
     EdgeAudioPayload,
@@ -36,6 +37,12 @@ class TestEdgeAudio(unittest.TestCase):
         self.assertEqual(decision.reason, "accepted")
         self.assertEqual(decision.command, "quelle heure est il")
 
+    def test_edge_activation_wake_word_is_case_insensitive(self) -> None:
+        decision = evaluate_edge_activation("NoVa quelle heure est il", wake_word="NOVA")
+        self.assertTrue(decision.should_send)
+        self.assertEqual(decision.reason, "accepted")
+        self.assertEqual(decision.command, "quelle heure est il")
+
     def test_edge_activation_rejects_noise_profile_after_wake_word(self) -> None:
         decision = evaluate_edge_activation("nova aaaa aaaa aaaa", wake_word="nova")
         self.assertFalse(decision.should_send)
@@ -59,6 +66,10 @@ class TestEdgeAudio(unittest.TestCase):
         self.assertLess(value, 20000)
         self.assertGreater(value, 0)
 
+    def test_attenuation_rejects_odd_length_pcm(self) -> None:
+        with self.assertRaises(ValueError):
+            attenuate_pcm16le(b"\x01\x02\x03", factor=0.8)
+
     def test_build_payload_applies_auto_attenuation_when_saturated(self) -> None:
         saturated = (32767).to_bytes(2, "little", signed=True) * 32
         payload = build_edge_audio_payload(
@@ -73,6 +84,13 @@ class TestEdgeAudio(unittest.TestCase):
     def test_sanitize_skips_non_pcm16le_encoding(self) -> None:
         raw = b"abc123"
         sanitized, ratio, applied = sanitize_pcm16le_if_saturated(raw, encoding="wav")
+        self.assertEqual(sanitized, raw)
+        self.assertEqual(ratio, 0.0)
+        self.assertFalse(applied)
+
+    def test_sanitize_skips_odd_length_pcm_payload(self) -> None:
+        raw = b"\x01\x02\x03"
+        sanitized, ratio, applied = sanitize_pcm16le_if_saturated(raw, encoding="pcm16le")
         self.assertEqual(sanitized, raw)
         self.assertEqual(ratio, 0.0)
         self.assertFalse(applied)
@@ -202,6 +220,57 @@ class TestEdgeAudio(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(response["status"], "error")
         self.assertEqual(response["reason"], "invalid_audio_utf8")
+
+    def test_backend_rejects_unsupported_encoding(self) -> None:
+        payload = EdgeAudioPayload(
+            correlation_id="cid-enc",
+            device_id="esp32-01",
+            timestamp_ms=123,
+            sample_rate_hz=16000,
+            channels=1,
+            encoding="wav",
+            audio_base64="cXVlbGxlIGhldXJlIGVzdCBpbA==",
+        )
+
+        status, response = handle_edge_audio_request(json.dumps(payload.to_dict()).encode("utf-8"))
+
+        self.assertEqual(status, 400)
+        self.assertEqual(response["status"], "error")
+        self.assertEqual(response["reason"], "unsupported_encoding")
+
+    def test_backend_accepts_utf8_encoding(self) -> None:
+        payload = EdgeAudioPayload(
+            correlation_id="cid-utf8",
+            device_id="esp32-01",
+            timestamp_ms=123,
+            sample_rate_hz=16000,
+            channels=1,
+            encoding="utf8",
+            audio_base64="cXVlbGxlIGhldXJlIGVzdCBpbA==",
+        )
+
+        status, response = handle_edge_audio_request(json.dumps(payload.to_dict()).encode("utf-8"))
+
+        self.assertEqual(status, 200)
+        self.assertEqual(response["status"], "accepted")
+
+    def test_backend_rejects_pcm_text_proxy_when_disabled(self) -> None:
+        payload = EdgeAudioPayload(
+            correlation_id="cid-pcm-off",
+            device_id="esp32-01",
+            timestamp_ms=123,
+            sample_rate_hz=16000,
+            channels=1,
+            encoding="pcm16le",
+            audio_base64="cXVlbGxlIGhldXJlIGVzdCBpbA==",
+        )
+
+        with patch.dict("os.environ", {"EDGE_BACKEND_ALLOW_TEXT_PROXY": "false"}, clear=False):
+            status, response = handle_edge_audio_request(json.dumps(payload.to_dict()).encode("utf-8"))
+
+        self.assertEqual(status, 400)
+        self.assertEqual(response["status"], "error")
+        self.assertEqual(response["reason"], "unsupported_encoding")
 
 
 if __name__ == "__main__":
