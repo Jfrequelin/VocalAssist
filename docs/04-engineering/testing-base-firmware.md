@@ -8,6 +8,7 @@ le format d'echange avec l'assistant sur `POST /edge/audio` (contrat v2).
 - Tester localement la boucle firmware -> assistant sans hardware reel.
 - Garder un point d'entree simple pour validation rapide avant integration STM32.
 - Reproduire l'echange de payloads avec traces exploitables en tests unitaires.
+- Simuler une base complete (routing local, providers, fallback Leon) sur Linux.
 
 ## Composants
 
@@ -43,6 +44,21 @@ python main.py --mode testbench
 python scripts/run_base_testbench.py
 ```
 
+Modes de simulation:
+
+- `ASSISTANT_TESTBENCH_TRANSPORT=local` (defaut): backend edge simule in-process
+- `ASSISTANT_TESTBENCH_TRANSPORT=http`: appel HTTP vers backend externe
+- `ASSISTANT_TESTBENCH_PERIPHERALS=auto` (defaut): systeme Linux si disponible, sinon mock
+- `ASSISTANT_TESTBENCH_PERIPHERALS=system`: force systeme Linux (`arecord`, `spd-say`/`espeak`)
+- `ASSISTANT_TESTBENCH_PERIPHERALS=mock`: force clavier + console
+
+Commandes de controle pendant la session:
+
+- `/help`
+- `/status`
+- `/mute`
+- `/unmute`
+
 Exemple d'entree micro simulee:
 
 ```text
@@ -64,6 +80,9 @@ Arret:
 - `EDGE_TIMEOUT_SECONDS`
 - `EDGE_RETRY_ATTEMPTS`
 - `EDGE_RETRY_BACKOFF_SECONDS`
+- `ASSISTANT_TESTBENCH_TRANSPORT`
+- `ASSISTANT_TESTBENCH_PERIPHERALS`
+- `TESTBENCH_MIC_SECONDS`
 
 ## Couverture de test
 

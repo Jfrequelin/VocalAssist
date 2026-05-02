@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
+import platform
+import shutil
 
 from src.base import (
     AssistantEdgeTransport,
@@ -8,8 +11,87 @@ from src.base import (
     ConsoleScreenAdapter,
     ConsoleSpeakerAdapter,
     EdgeBaseConfig,
+    EdgeAudioRequest,
+    EdgeAudioResponse,
+    LinuxArecordMicrophoneAdapter,
+    LinuxSystemSpeakerAdapter,
     StdinMicrophoneAdapter,
 )
+from src.base.interfaces import TransportClient
+from src.base.peripherals import MicrophoneDevice, SpeakerDevice
+
+from src.assistant.edge_backend import handle_edge_audio_request
+from src.assistant.voice_pipeline import FasterWhisperSpeechToText
+
+
+class InProcessEdgeBackendTransport(TransportClient):
+    """Simulate complete stack in-process using the real edge backend handler."""
+
+    def send_audio(self, request: EdgeAudioRequest) -> EdgeAudioResponse:
+        raw_body = json.dumps(request.to_dict()).encode("utf-8")
+        status_code, response = handle_edge_audio_request(raw_body)
+        return EdgeAudioResponse(status_code=status_code, payload=response)
+
+
+def build_transport(config: EdgeBaseConfig) -> TransportClient:
+    mode = os.getenv("ASSISTANT_TESTBENCH_TRANSPORT", "local").strip().lower()
+    if mode == "http":
+        return AssistantEdgeTransport(config)
+    if mode == "local":
+        return InProcessEdgeBackendTransport()
+
+    print(f"Testbench: mode transport inconnu '{mode}', fallback local")
+    return InProcessEdgeBackendTransport()
+
+
+def build_linux_microphone(config: EdgeBaseConfig) -> MicrophoneDevice:
+    model_size = os.getenv("ASSISTANT_STT_MODEL", "small")
+    stt = FasterWhisperSpeechToText(model_size=model_size, language="fr")
+    duration_seconds = int(os.getenv("TESTBENCH_MIC_SECONDS", "3"))
+    return LinuxArecordMicrophoneAdapter(
+        transcribe=stt.transcribe,
+        duration_seconds=duration_seconds,
+        sample_rate_hz=config.sample_rate_hz,
+        channels=config.channels,
+    )
+
+
+def build_microphone(config: EdgeBaseConfig) -> MicrophoneDevice:
+    mode = os.getenv("ASSISTANT_TESTBENCH_PERIPHERALS", "auto").strip().lower()
+    is_linux = platform.system().lower() == "linux"
+
+    if mode == "mock":
+        return StdinMicrophoneAdapter(prompt="Micro(simule) > ")
+
+    if mode in {"auto", "system"} and is_linux:
+        try:
+            return build_linux_microphone(config)
+        except RuntimeError as exc:
+            print(f"Testbench: micro systeme indisponible ({exc}), fallback clavier")
+            return StdinMicrophoneAdapter(prompt="Micro(simule) > ")
+
+    if mode == "system":
+        print("Testbench: peripheriques systeme supportes uniquement sous Linux, fallback clavier")
+    return StdinMicrophoneAdapter(prompt="Micro(simule) > ")
+
+
+def build_speaker() -> SpeakerDevice:
+    mode = os.getenv("ASSISTANT_TESTBENCH_PERIPHERALS", "auto").strip().lower()
+    is_linux = platform.system().lower() == "linux"
+
+    if mode == "mock":
+        return ConsoleSpeakerAdapter()
+
+    if mode in {"auto", "system"} and is_linux:
+        try:
+            return LinuxSystemSpeakerAdapter()
+        except RuntimeError as exc:
+            print(f"Testbench: speaker systeme indisponible ({exc}), fallback console")
+            return ConsoleSpeakerAdapter()
+
+    if mode == "system":
+        print("Testbench: peripheriques systeme supportes uniquement sous Linux, fallback console")
+    return ConsoleSpeakerAdapter()
 
 
 def run_base_testbench() -> None:
@@ -26,20 +108,36 @@ def run_base_testbench() -> None:
         retry_backoff_seconds=float(os.getenv("EDGE_RETRY_BACKOFF_SECONDS", "0.2")),
     )
 
+    transport = build_transport(config)
+    microphone = build_microphone(config)
+    speaker = build_speaker()
+
     bench = AssistantFirmwareTestBench(
         config=config,
-        transport=AssistantEdgeTransport(config),
-        microphone=StdinMicrophoneAdapter(prompt="Micro(simule) > "),
-        speaker=ConsoleSpeakerAdapter(),
+        transport=transport,
+        microphone=microphone,
+        speaker=speaker,
         screen=ConsoleScreenAdapter(),
     )
 
-    print("=== Base de test firmware edge ===")
-    print("Format d'echange: contrat /edge/audio v2")
-    print("Saisir du texte simule apres wake word (ex: 'nova quelle heure est-il').")
-    print("Saisir quit/exit/stop pour arreter.")
+    transport_mode = os.getenv("ASSISTANT_TESTBENCH_TRANSPORT", "local").strip().lower()
+    peripheral_mode = os.getenv("ASSISTANT_TESTBENCH_PERIPHERALS", "auto").strip().lower()
 
-    for record in bench.run_until_stop():
+    print("=== Base de test firmware edge ===")
+    print("Simulation complete: intents locaux, providers externes, fallback Leon, etat edge")
+    print("Format d'echange: contrat /edge/audio v2")
+    print(f"Transport: {transport_mode} (local=in-process, http=backend distant)")
+    print(f"Peripheriques: {peripheral_mode} (auto/system/mock)")
+    print("Commandes: /help /status /mute /unmute")
+    print("Entrer une requete avec wake word (ex: nova quelle heure est-il)")
+    print("Saisir quit/exit/stop pour arreter.")
+    if shutil.which("arecord") is None:
+        print("Info: arecord absent -> micro clavier simule")
+
+    while True:
+        record = bench.run_once()
+        if record is None:
+            break
         print("----")
         print(f"transcript: {record.transcript}")
         print(f"result: sent={record.runtime_result.sent}, reason={record.runtime_result.reason}")

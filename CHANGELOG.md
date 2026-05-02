@@ -14,6 +14,7 @@ Le format suit une structure simple inspiree de Keep a Changelog.
 - Tests cibles supplementaires sur edge audio, orchestrator et providers.
 - Base de test firmware desktop avec peripheriques abstraits (micro, haut-parleur, ecran mock), harness d'echange assistant et script de lancement.
 - Mode CLI principal `testbench` pour lancer la base de test firmware via `main.py`.
+- Mode testbench etendu pour simuler une base complete sur Linux (transport local in-process, peripheriques systeme, commandes de controle runtime).
 
 ## [2026-05-02]
 

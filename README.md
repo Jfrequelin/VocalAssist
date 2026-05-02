@@ -30,11 +30,14 @@ python scripts/run_base_testbench.py
 
 Une base de test desktop est disponible pour valider le format d'echange
 avec l'assistant (`POST /edge/audio`, contrat v2), en utilisant des
-peripheriques abstraits:
+peripheriques abstraits ou systeme Linux:
 
 - micro desktop simule (entree clavier)
+- micro systeme Linux via `arecord` + transcription STT (optionnel)
 - haut-parleur desktop (sortie console)
+- haut-parleur systeme Linux via `spd-say` ou `espeak` (optionnel)
 - ecran mock/console pour les etats firmware
+- transport local in-process pour simuler toute la base sans backend externe
 
 Commande:
 
@@ -43,6 +46,19 @@ python main.py --mode testbench
 # ou
 python scripts/run_base_testbench.py
 ```
+
+Variables de simulation complete:
+
+- `ASSISTANT_TESTBENCH_TRANSPORT=local|http` (defaut `local`)
+- `ASSISTANT_TESTBENCH_PERIPHERALS=auto|system|mock` (defaut `auto`)
+- `TESTBENCH_MIC_SECONDS` duree de capture arecord (defaut `3`)
+
+Commandes runtime testbench:
+
+- `/help`
+- `/status`
+- `/mute`
+- `/unmute`
 
 Exemple d'entree:
 

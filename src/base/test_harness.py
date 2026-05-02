@@ -89,6 +89,13 @@ class AssistantFirmwareTestBench:
             return None
 
         transcript = captured.transcript
+        # Reset recordings to avoid carrying previous exchange payloads.
+        self._recording_transport.last_request = None
+        self._recording_transport.last_response = None
+
+        if transcript.startswith("/"):
+            return self._handle_control_command(transcript)
+
         self._screen.show(state="listening", message=f"heard={transcript}")
         result = self._runtime.process_audio(
             transcript=transcript,
@@ -111,6 +118,30 @@ class AssistantFirmwareTestBench:
             runtime_result=result,
             request_payload=request_payload,
             response_payload=response_payload,
+        )
+
+    def _handle_control_command(self, transcript: str) -> ExchangeRecord:
+        command = transcript.strip().lower()
+        if command == "/mute":
+            self.set_mute(True)
+            reason = "control_mute_on"
+        elif command == "/unmute":
+            self.set_mute(False)
+            reason = "control_mute_off"
+        elif command == "/status":
+            current = self._runtime.state_machine.runtime
+            self._screen.show(state=current.state.value, message=f"muted={current.muted}, event={current.last_event}")
+            reason = "control_status"
+        else:
+            self._screen.show(state="idle", message="controls: /help /status /mute /unmute")
+            reason = "control_help"
+
+        result = RuntimeResult(sent=False, reason=reason)
+        return ExchangeRecord(
+            transcript=transcript,
+            runtime_result=result,
+            request_payload=None,
+            response_payload=None,
         )
 
     def run_until_stop(self, *, max_turns: int | None = None) -> list[ExchangeRecord]:

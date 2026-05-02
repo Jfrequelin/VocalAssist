@@ -4,6 +4,8 @@ from .peripherals import (
     CapturedAudio,
     ConsoleScreenAdapter,
     ConsoleSpeakerAdapter,
+    LinuxArecordMicrophoneAdapter,
+    LinuxSystemSpeakerAdapter,
     MockScreenAdapter,
     StdinMicrophoneAdapter,
 )
@@ -25,6 +27,8 @@ __all__ = [
     "EdgeRuntime",
     "EdgeStateMachine",
     "ExchangeRecord",
+    "LinuxArecordMicrophoneAdapter",
+    "LinuxSystemSpeakerAdapter",
     "MockScreenAdapter",
     "RuntimeState",
     "StaticMicrophoneBuffer",
