@@ -2,9 +2,19 @@ from __future__ import annotations
 
 import os
 import unittest
+from typing import Any
 from unittest.mock import patch
 
-from src.assistant.base_testbench import InProcessEdgeBackendTransport, build_microphone, build_screen, build_transport
+from src.assistant.base_testbench import (
+    InProcessEdgeBackendTransport,
+    TestbenchMetrics,
+    build_microphone,
+    build_screen,
+    build_transport,
+    format_metrics_line,
+    summarize_turn,
+    update_metrics,
+)
 from src.base import ConsoleScreenAdapter, EdgeAudioRequest, EdgeBaseConfig
 from src.base.peripherals import StdinMicrophoneAdapter
 
@@ -45,11 +55,51 @@ class TestBaseTestbenchMode(unittest.TestCase):
         self.assertIsInstance(mic, StdinMicrophoneAdapter)
 
     @patch("src.assistant.base_testbench.TkScreenAdapter", side_effect=RuntimeError("headless"))
-    def test_auto_screen_falls_back_to_console_when_tk_unavailable(self, _mock_tk) -> None:  # type: ignore[no-untyped-def]
+    def test_auto_screen_falls_back_to_console_when_tk_unavailable(self, _mock_tk: Any) -> None:
         with patch.dict(os.environ, {"ASSISTANT_TESTBENCH_SCREEN": "auto"}, clear=False):
             screen = build_screen()
 
         self.assertIsInstance(screen, ConsoleScreenAdapter)
+
+    def test_update_metrics_tracks_turn_outcomes(self) -> None:
+        metrics = TestbenchMetrics()
+
+        update_metrics(
+            metrics,
+            sent=True,
+            reason="accepted",
+            latency_ms=12.5,
+            response_payload={"intent": "time", "source": "local", "status": "accepted"},
+        )
+        update_metrics(
+            metrics,
+            sent=False,
+            reason="backend_rejected",
+            latency_ms=20.0,
+            response_payload={"status": "error"},
+        )
+
+        self.assertEqual(metrics.total_turns, 2)
+        self.assertEqual(metrics.sent_turns, 1)
+        self.assertEqual(metrics.rejected_turns, 1)
+        self.assertEqual(metrics.backend_errors, 1)
+        self.assertEqual(metrics.last_intent, "time")
+        self.assertEqual(metrics.last_source, "local")
+        self.assertAlmostEqual(metrics.avg_latency_ms, 16.25)
+
+    def test_summaries_include_latency_intent_source(self) -> None:
+        metrics = TestbenchMetrics(total_turns=3, sent_turns=2, rejected_turns=1, total_latency_ms=42.0)
+        turn_summary = summarize_turn(
+            reason="accepted",
+            latency_ms=14.0,
+            response_payload={"status": "accepted", "intent": "weather", "source": "local"},
+        )
+        metrics_line = format_metrics_line(metrics)
+
+        self.assertIn("reason=accepted", turn_summary)
+        self.assertIn("intent=weather", turn_summary)
+        self.assertIn("source=local", turn_summary)
+        self.assertIn("avg_latency_ms=14.0", metrics_line)
 
 
 if __name__ == "__main__":

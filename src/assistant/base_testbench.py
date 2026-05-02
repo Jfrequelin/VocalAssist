@@ -4,6 +4,9 @@ import json
 import os
 import platform
 import shutil
+from dataclasses import dataclass
+from time import perf_counter
+from typing import Any
 
 from src.base import (
     AssistantEdgeTransport,
@@ -23,6 +26,84 @@ from src.base.peripherals import MicrophoneDevice, ScreenDevice, SpeakerDevice
 
 from src.assistant.edge_backend import handle_edge_audio_request
 from src.assistant.voice_pipeline import FasterWhisperSpeechToText
+
+
+@dataclass
+class TestbenchMetrics:
+    total_turns: int = 0
+    sent_turns: int = 0
+    rejected_turns: int = 0
+    backend_errors: int = 0
+    total_latency_ms: float = 0.0
+    last_intent: str = "-"
+    last_source: str = "-"
+
+    @property
+    def avg_latency_ms(self) -> float:
+        if self.total_turns == 0:
+            return 0.0
+        return self.total_latency_ms / self.total_turns
+
+
+def update_metrics(
+    metrics: TestbenchMetrics,
+    *,
+    sent: bool,
+    reason: str,
+    latency_ms: float,
+    response_payload: dict[str, Any] | None,
+) -> None:
+    metrics.total_turns += 1
+    metrics.total_latency_ms += max(0.0, latency_ms)
+    if sent:
+        metrics.sent_turns += 1
+    else:
+        metrics.rejected_turns += 1
+
+    if reason == "backend_rejected":
+        metrics.backend_errors += 1
+
+    if isinstance(response_payload, dict):
+        intent = response_payload.get("intent")
+        source = response_payload.get("source")
+        if isinstance(intent, str) and intent.strip():
+            metrics.last_intent = intent.strip()
+        if isinstance(source, str) and source.strip():
+            metrics.last_source = source.strip()
+
+
+def format_metrics_line(metrics: TestbenchMetrics) -> str:
+    return (
+        f"metrics: turns={metrics.total_turns}, sent={metrics.sent_turns}, "
+        f"rejected={metrics.rejected_turns}, backend_errors={metrics.backend_errors}, "
+        f"avg_latency_ms={metrics.avg_latency_ms:.1f}, "
+        f"last_intent={metrics.last_intent}, last_source={metrics.last_source}"
+    )
+
+
+def summarize_turn(
+    *,
+    reason: str,
+    latency_ms: float,
+    response_payload: dict[str, Any] | None,
+) -> str:
+    intent = "-"
+    source = "-"
+    status = "-"
+    if isinstance(response_payload, dict):
+        raw_intent = response_payload.get("intent")
+        raw_source = response_payload.get("source")
+        raw_status = response_payload.get("status")
+        if isinstance(raw_intent, str) and raw_intent.strip():
+            intent = raw_intent.strip()
+        if isinstance(raw_source, str) and raw_source.strip():
+            source = raw_source.strip()
+        if isinstance(raw_status, str) and raw_status.strip():
+            status = raw_status.strip()
+    return (
+        f"turn: reason={reason}, latency_ms={latency_ms:.1f}, "
+        f"status={status}, intent={intent}, source={source}"
+    )
 
 
 class InProcessEdgeBackendTransport(TransportClient):
@@ -157,13 +238,40 @@ def run_base_testbench() -> None:
     if shutil.which("arecord") is None:
         print("Info: arecord absent -> micro clavier simule")
 
+    metrics = TestbenchMetrics()
+
     while True:
+        turn_start = perf_counter()
         record = bench.run_once()
         if record is None:
             break
+        latency_ms = (perf_counter() - turn_start) * 1000
+        update_metrics(
+            metrics,
+            sent=record.runtime_result.sent,
+            reason=record.runtime_result.reason,
+            latency_ms=latency_ms,
+            response_payload=record.response_payload,
+        )
+
+        screen_message = (
+            summarize_turn(
+                reason=record.runtime_result.reason,
+                latency_ms=latency_ms,
+                response_payload=record.response_payload,
+            )
+            + "\n"
+            + format_metrics_line(metrics)
+        )
+        screen_state = "speaking" if record.runtime_result.sent else "idle"
+        if record.runtime_result.reason == "backend_rejected":
+            screen_state = "error"
+        screen.show(state=screen_state, message=screen_message)
+
         print("----")
         print(f"transcript: {record.transcript}")
         print(f"result: sent={record.runtime_result.sent}, reason={record.runtime_result.reason}")
+        print(f"latency_ms: {latency_ms:.1f}")
         if record.request_payload is not None:
             print(
                 "request: "
@@ -178,3 +286,4 @@ def run_base_testbench() -> None:
                 f"api_version={record.response_payload.get('api_version')} "
                 f"intent={record.response_payload.get('intent')}"
             )
+            print(format_metrics_line(metrics))

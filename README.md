@@ -61,6 +61,11 @@ Commandes runtime testbench:
 - `/mute`
 - `/unmute`
 
+Observabilite runtime:
+
+- resume de tour: raison, latence, status, intent, source
+- metriques cumulatives: turns, sent, rejected, backend_errors, avg_latency_ms
+
 Exemple d'entree:
 
 ```text

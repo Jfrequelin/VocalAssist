@@ -63,6 +63,12 @@ Commandes de controle pendant la session:
 - `/mute`
 - `/unmute`
 
+Indicateurs runtime exposes:
+
+- latence par tour (ms)
+- intent/source de la reponse backend
+- compteurs cumules (turns, sent, rejected, backend_errors, avg_latency_ms)
+
 Exemple d'entree micro simulee:
 
 ```text
