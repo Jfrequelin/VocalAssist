@@ -15,6 +15,7 @@ Le format suit une structure simple inspiree de Keep a Changelog.
 - Base de test firmware desktop avec peripheriques abstraits (micro, haut-parleur, ecran mock), harness d'echange assistant et script de lancement.
 - Mode CLI principal `testbench` pour lancer la base de test firmware via `main.py`.
 - Mode testbench etendu pour simuler une base complete sur Linux (transport local in-process, peripheriques systeme, commandes de controle runtime).
+- Ecran Tk optionnel pour visualiser l'etat de la base Linux en temps reel dans le mode testbench.
 
 ## [2026-05-02]
 

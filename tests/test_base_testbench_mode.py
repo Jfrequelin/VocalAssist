@@ -4,8 +4,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from src.assistant.base_testbench import InProcessEdgeBackendTransport, build_microphone, build_transport
-from src.base import EdgeAudioRequest, EdgeBaseConfig
+from src.assistant.base_testbench import InProcessEdgeBackendTransport, build_microphone, build_screen, build_transport
+from src.base import ConsoleScreenAdapter, EdgeAudioRequest, EdgeBaseConfig
 from src.base.peripherals import StdinMicrophoneAdapter
 
 
@@ -43,6 +43,13 @@ class TestBaseTestbenchMode(unittest.TestCase):
             mic = build_microphone(config)
 
         self.assertIsInstance(mic, StdinMicrophoneAdapter)
+
+    @patch("src.assistant.base_testbench.TkScreenAdapter", side_effect=RuntimeError("headless"))
+    def test_auto_screen_falls_back_to_console_when_tk_unavailable(self, _mock_tk) -> None:  # type: ignore[no-untyped-def]
+        with patch.dict(os.environ, {"ASSISTANT_TESTBENCH_SCREEN": "auto"}, clear=False):
+            screen = build_screen()
+
+        self.assertIsInstance(screen, ConsoleScreenAdapter)
 
 
 if __name__ == "__main__":

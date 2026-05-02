@@ -29,6 +29,7 @@ Implementations desktop/mock:
 - `ConsoleSpeakerAdapter`: simule la restitution audio via la console.
 - `MockScreenAdapter`: stocke les evenements d'ecran pour assertions.
 - `ConsoleScreenAdapter`: affiche l'etat firmware en console.
+- `TkScreenAdapter`: affiche l'etat firmware dans une fenetre Tk locale.
 
 ## Lancer la base de test
 
@@ -51,6 +52,9 @@ Modes de simulation:
 - `ASSISTANT_TESTBENCH_PERIPHERALS=auto` (defaut): systeme Linux si disponible, sinon mock
 - `ASSISTANT_TESTBENCH_PERIPHERALS=system`: force systeme Linux (`arecord`, `spd-say`/`espeak`)
 - `ASSISTANT_TESTBENCH_PERIPHERALS=mock`: force clavier + console
+- `ASSISTANT_TESTBENCH_SCREEN=auto`: fenetre Tk si disponible, sinon console
+- `ASSISTANT_TESTBENCH_SCREEN=tk`: force une fenetre Tk
+- `ASSISTANT_TESTBENCH_SCREEN=console`: force l'affichage console
 
 Commandes de controle pendant la session:
 
@@ -82,6 +86,7 @@ Arret:
 - `EDGE_RETRY_BACKOFF_SECONDS`
 - `ASSISTANT_TESTBENCH_TRANSPORT`
 - `ASSISTANT_TESTBENCH_PERIPHERALS`
+- `ASSISTANT_TESTBENCH_SCREEN`
 - `TESTBENCH_MIC_SECONDS`
 
 ## Couverture de test

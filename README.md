@@ -36,7 +36,7 @@ peripheriques abstraits ou systeme Linux:
 - micro systeme Linux via `arecord` + transcription STT (optionnel)
 - haut-parleur desktop (sortie console)
 - haut-parleur systeme Linux via `spd-say` ou `espeak` (optionnel)
-- ecran mock/console pour les etats firmware
+- ecran console ou fenetre Tk Linux pour les etats firmware
 - transport local in-process pour simuler toute la base sans backend externe
 
 Commande:
@@ -51,6 +51,7 @@ Variables de simulation complete:
 
 - `ASSISTANT_TESTBENCH_TRANSPORT=local|http` (defaut `local`)
 - `ASSISTANT_TESTBENCH_PERIPHERALS=auto|system|mock` (defaut `auto`)
+- `ASSISTANT_TESTBENCH_SCREEN=auto|tk|console` (defaut `auto`)
 - `TESTBENCH_MIC_SECONDS` duree de capture arecord (defaut `3`)
 
 Commandes runtime testbench:

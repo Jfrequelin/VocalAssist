@@ -7,6 +7,11 @@ import tempfile
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
+try:
+    import tkinter as tk
+except ImportError:  # pragma: no cover - depends on system package availability
+    tk = None
+
 
 @dataclass(frozen=True)
 class CapturedAudio:
@@ -151,3 +156,86 @@ class ConsoleScreenAdapter:
 
     def show(self, *, state: str, message: str) -> None:
         print(f"Screen[{state}]: {message}")
+
+
+class TkScreenAdapter:
+    """Desktop adapter: lightweight Tk window to visualize edge state live."""
+
+    _STATE_COLORS = {
+        "idle": "#d9e2ec",
+        "listening": "#ffe08a",
+        "sending": "#9ad1ff",
+        "speaking": "#c3f0ca",
+        "muted": "#f7a8a8",
+        "error": "#ff8b8b",
+    }
+
+    def __init__(self, *, title: str = "AssistantVocal Testbench") -> None:
+        if tk is None:
+            raise RuntimeError("tkinter indisponible")
+
+        try:
+            self._root = tk.Tk()
+        except tk.TclError as exc:  # type: ignore[union-attr]
+            raise RuntimeError("affichage graphique indisponible") from exc
+
+        self._root.title(title)
+        self._root.geometry("480x220")
+        self._root.configure(bg="#101418")
+
+        self._state_var = tk.StringVar(value="idle")
+        self._message_var = tk.StringVar(value="Pret")
+
+        frame = tk.Frame(self._root, bg="#101418", padx=18, pady=18)
+        frame.pack(fill="both", expand=True)
+
+        tk.Label(
+            frame,
+            text="AssistantVocal Base Linux",
+            font=("Helvetica", 18, "bold"),
+            fg="#f4f7fb",
+            bg="#101418",
+        ).pack(anchor="w")
+
+        self._badge = tk.Label(
+            frame,
+            textvariable=self._state_var,
+            font=("Helvetica", 14, "bold"),
+            fg="#101418",
+            bg=self._STATE_COLORS["idle"],
+            padx=12,
+            pady=6,
+        )
+        self._badge.pack(anchor="w", pady=(14, 12))
+
+        tk.Label(
+            frame,
+            text="Dernier evenement",
+            font=("Helvetica", 10),
+            fg="#9fb3c8",
+            bg="#101418",
+        ).pack(anchor="w")
+
+        self._message = tk.Label(
+            frame,
+            textvariable=self._message_var,
+            justify="left",
+            anchor="w",
+            wraplength=420,
+            font=("Helvetica", 12),
+            fg="#f4f7fb",
+            bg="#101418",
+        )
+        self._message.pack(fill="x", pady=(6, 0))
+        self._pump()
+
+    def show(self, *, state: str, message: str) -> None:
+        normalized_state = state.strip().lower() or "idle"
+        self._state_var.set(normalized_state)
+        self._message_var.set(message.strip() or "-")
+        self._badge.configure(bg=self._STATE_COLORS.get(normalized_state, "#d9e2ec"))
+        self._pump()
+
+    def _pump(self) -> None:
+        self._root.update_idletasks()
+        self._root.update()

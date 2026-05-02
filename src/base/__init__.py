@@ -8,6 +8,7 @@ from .peripherals import (
     LinuxSystemSpeakerAdapter,
     MockScreenAdapter,
     StdinMicrophoneAdapter,
+    TkScreenAdapter,
 )
 from .runtime import EdgeRuntime
 from .state_machine import BaseState, EdgeStateMachine, RuntimeState
@@ -33,4 +34,5 @@ __all__ = [
     "RuntimeState",
     "StaticMicrophoneBuffer",
     "StdinMicrophoneAdapter",
+    "TkScreenAdapter",
 ]
