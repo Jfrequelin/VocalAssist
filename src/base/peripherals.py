@@ -69,7 +69,10 @@ class LinuxArecordMicrophoneAdapter:
             raise RuntimeError("arecord introuvable")
 
     def capture(self) -> CapturedAudio | None:
-        raw = input(self._prompt).strip().lower()
+        try:
+            raw = input(self._prompt).strip().lower()
+        except EOFError:
+            return None
         if raw in {"quit", "exit", "stop"}:
             return None
 
@@ -96,8 +99,6 @@ class LinuxArecordMicrophoneAdapter:
                 return CapturedAudio(transcript="", audio_bytes=b"")
 
             transcript = self._transcribe(temp_path).strip()
-            if transcript.lower() in {"quit", "exit", "stop"}:
-                return None
             if not transcript:
                 return CapturedAudio(transcript="", audio_bytes=b"")
 
