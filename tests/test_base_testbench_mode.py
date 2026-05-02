@@ -9,6 +9,7 @@ from unittest.mock import patch
 from src.assistant.base_testbench import (
     InProcessEdgeBackendTransport,
     TestbenchMetrics,
+    apply_silence_backoff,
     build_microphone,
     build_session_snapshot,
     build_screen,
@@ -141,6 +142,20 @@ class TestBaseTestbenchMode(unittest.TestCase):
         self.assertIn("summary", snapshot)
         self.assertIn("timeline", snapshot)
         self.assertEqual(len(snapshot["timeline"]), 2)
+
+    @patch("src.assistant.base_testbench.sleep")
+    def test_apply_silence_backoff_waits_for_empty_audio(self, mock_sleep: Any) -> None:
+        waited = apply_silence_backoff(reason="empty_audio", wait_seconds=5.0)
+
+        self.assertTrue(waited)
+        mock_sleep.assert_called_once_with(5.0)
+
+    @patch("src.assistant.base_testbench.sleep")
+    def test_apply_silence_backoff_skips_for_non_silence(self, mock_sleep: Any) -> None:
+        waited = apply_silence_backoff(reason="accepted", wait_seconds=5.0)
+
+        self.assertFalse(waited)
+        mock_sleep.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import platform
 import shutil
 from dataclasses import dataclass
 from time import perf_counter
+from time import sleep
 from time import time
 from typing import Any
 
@@ -156,6 +157,18 @@ def summarize_turn(
     )
 
 
+def apply_silence_backoff(*, reason: str, wait_seconds: float) -> bool:
+    if reason != "empty_audio":
+        return False
+
+    delay = max(0.0, wait_seconds)
+    if delay <= 0:
+        return False
+
+    sleep(delay)
+    return True
+
+
 class InProcessEdgeBackendTransport(TransportClient):
     """Simulate complete stack in-process using the real edge backend handler."""
 
@@ -275,6 +288,7 @@ def run_base_testbench() -> None:
     transport_mode = os.getenv("ASSISTANT_TESTBENCH_TRANSPORT", "local").strip().lower()
     peripheral_mode = os.getenv("ASSISTANT_TESTBENCH_PERIPHERALS", "auto").strip().lower()
     screen_mode = os.getenv("ASSISTANT_TESTBENCH_SCREEN", "auto").strip().lower()
+    silence_wait_seconds = float(os.getenv("ASSISTANT_TESTBENCH_SILENCE_WAIT_SECONDS", "5"))
 
     print("=== Base de test firmware edge ===")
     print("Simulation complete: intents locaux, providers externes, fallback Leon, etat edge")
@@ -282,6 +296,7 @@ def run_base_testbench() -> None:
     print(f"Transport: {transport_mode} (local=in-process, http=backend distant)")
     print(f"Peripheriques: {peripheral_mode} (auto/system/mock)")
     print(f"Ecran: {screen_mode} (auto/tk/console)")
+    print(f"Silence wait: {silence_wait_seconds:.1f}s apres empty_audio")
     print("Commandes: /help /status /mute /unmute")
     print("Entrer une requete avec wake word (ex: nova quelle heure est-il)")
     print("Saisir quit/exit/stop pour arreter.")
@@ -337,6 +352,9 @@ def run_base_testbench() -> None:
                 f"intent={record.response_payload.get('intent')}"
             )
             print(format_metrics_line(metrics))
+
+        if apply_silence_backoff(reason=record.runtime_result.reason, wait_seconds=silence_wait_seconds):
+            print(f"silence_backoff: attente {max(0.0, silence_wait_seconds):.1f}s")
 
         exported = maybe_export_snapshot(metrics)
         if exported is not None:

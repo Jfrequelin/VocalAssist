@@ -18,6 +18,7 @@ Le format suit une structure simple inspiree de Keep a Changelog.
 - Ecran Tk optionnel pour visualiser l'etat de la base Linux en temps reel dans le mode testbench.
 - Indicateurs runtime du testbench (latence, intent/source, compteurs cumules) affiches en console et ecran.
 - Export JSON optionnel du testbench avec resume de session et timeline horodatee des evenements.
+- Backoff silence configurable dans le testbench (5 secondes par defaut apres `empty_audio`).
 
 ## [2026-05-02]
 
