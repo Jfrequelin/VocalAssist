@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import time
 from typing import Any, Protocol
+import wave
 
 import shutil
 import subprocess
@@ -43,6 +44,8 @@ class FasterWhisperSpeechToText:
 
     model_size: str = "small"
     language: str = "fr"
+    no_speech_threshold: float = 0.6
+    min_avg_amplitude: float = 180.0
     _model: Any | None = None
 
     def _get_model(self) -> Any:
@@ -67,10 +70,63 @@ class FasterWhisperSpeechToText:
         if not candidate.exists():
             return payload
 
+        if self._is_likely_silence(candidate):
+            return ""
+
         model = self._get_model()
-        segments, _ = model.transcribe(str(candidate), language=self.language)
-        transcribed = " ".join(segment.text.strip() for segment in segments if segment.text.strip())
+        segments, _ = model.transcribe(
+            str(candidate),
+            language=self.language,
+            vad_filter=True,
+            beam_size=1,
+            best_of=1,
+            temperature=0.0,
+            condition_on_previous_text=False,
+            no_speech_threshold=self.no_speech_threshold,
+        )
+
+        accepted_segments: list[str] = []
+        for segment in segments:
+            text = segment.text.strip()
+            if not text:
+                continue
+
+            no_speech_prob = float(getattr(segment, "no_speech_prob", 0.0))
+            if no_speech_prob >= self.no_speech_threshold:
+                continue
+
+            accepted_segments.append(text)
+
+        transcribed = " ".join(accepted_segments)
         return transcribed
+
+    def _is_likely_silence(self, audio_path: Path) -> bool:
+        """Best-effort guard against hallucinated transcriptions on silent captures."""
+        try:
+            with wave.open(str(audio_path), "rb") as wav:
+                sample_width = wav.getsampwidth()
+                frame_count = wav.getnframes()
+                channel_count = wav.getnchannels()
+                raw = wav.readframes(frame_count)
+        except (wave.Error, OSError):
+            return False
+
+        if sample_width != 2 or frame_count == 0 or not raw:
+            return False
+
+        sample_count = len(raw) // 2
+        if sample_count == 0:
+            return True
+
+        # PCM16LE average absolute amplitude.
+        total_abs = 0
+        for idx in range(0, len(raw), 2):
+            sample = int.from_bytes(raw[idx : idx + 2], byteorder="little", signed=True)
+            total_abs += abs(sample)
+
+        avg_abs = total_abs / sample_count
+        # Channel-agnostic threshold; mono/stereo normalized by sample_count.
+        return avg_abs < self.min_avg_amplitude / max(1, channel_count)
 
 
 @dataclass
