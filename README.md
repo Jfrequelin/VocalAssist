@@ -80,7 +80,7 @@ Si une variable Leon requise est absente ou invalide, le client Leon remonte une
 
 ## Providers externes du MVP
 
-Les intents `lumiere`, `meteo` et `musique` peuvent maintenant utiliser des providers HTTP externes. Sans configuration, le prototype conserve son fallback local simule.
+Les intents `lumiere`, `scene`, `temperature`, `meteo` et `musique` peuvent utiliser des providers HTTP externes. Sans configuration, le prototype conserve son fallback local simule.
 
 Home Assistant pour la lumiere:
 
@@ -92,6 +92,20 @@ Home Assistant pour la lumiere:
 	- `HOME_ASSISTANT_LIGHT_CUISINE`
 	- `HOME_ASSISTANT_LIGHT_BUREAU`
 - `HOME_ASSISTANT_TIMEOUT_SECONDS` (optionnelle)
+
+	Home Assistant pour les scenes:
+
+	- `HOME_ASSISTANT_SCENE_SOIREE`
+	- `HOME_ASSISTANT_SCENE_TRAVAIL`
+	- `HOME_ASSISTANT_SCENE_NUIT`
+	- `HOME_ASSISTANT_SCENE_FILM`
+	- `HOME_ASSISTANT_SCENE_DETENTE`
+
+	Home Assistant pour le thermostat:
+
+	- `HOME_ASSISTANT_CLIMATE_ENTITY`
+	- `HOME_ASSISTANT_CLIMATE_MIN_TEMP` (optionnelle, defaut `10`)
+	- `HOME_ASSISTANT_CLIMATE_MAX_TEMP` (optionnelle, defaut `30`)
 
 Provider meteo:
 
@@ -110,6 +124,8 @@ Exemple:
 HOME_ASSISTANT_URL=http://homeassistant.local:8123 \
 HOME_ASSISTANT_TOKEN=xxxx \
 HOME_ASSISTANT_LIGHT_SALON=light.salon \
+HOME_ASSISTANT_SCENE_SOIREE=scene.soiree \
+HOME_ASSISTANT_CLIMATE_ENTITY=climate.salon \
 WEATHER_PROVIDER_URL_TEMPLATE='https://weather.example/api/current?city={city}' \
 MUSIC_PROVIDER_URL=https://music.example/api/playback \
 python3 main.py --mode prototype

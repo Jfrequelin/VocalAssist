@@ -1,7 +1,7 @@
 # MVP Status - Statut du Produit Minimum Viable
 
 **Date**: Mai 2026  
-**État**: MVP consolidé et validé (396/396 tests passants)
+**État**: MVP consolide et valide (467 tests passants + smoke-test docker-compose vert)
 
 ## Macros Couvertes
 
@@ -39,29 +39,39 @@
 
 - ✅ Provider pattern (Protocol-based abstraction)
 - ✅ `HomeAssistantLightProvider`: Contrôle de lumière
+- ✅ `HomeAssistantSceneProvider`: Activation de scenes Home Assistant
+- ✅ `HomeAssistantClimateProvider`: Reglage thermostat Home Assistant
 - ✅ `WeatherProvider`: Météo dynamique
 - ✅ `WebhookMusicProvider`: Musique
 - ✅ `ProviderRegistry`: Factory avec env loading
 - ✅ Intégration dans `intents.py`
 - ✅ Fallback homogène
-- Tests: 30+ ✅
+- ✅ Idempotence et non-regression domotique (10 executions consecutives / action)
+- Tests: 40+ ✅
 
 ### ✅ MACRO-008: Qualité, sécurité et pilotage
 **État**: DÉJÀ IMPLÉMENTÉ (sessions antérieures)
 
 - ✅ Logs structurés avec correlation IDs
 - ✅ Circuit breaker pour Leon
+- ✅ `MetricsCollector` et `AlertManager` pour KPI continus et alerting
 - ✅ Validation et secrets (env-only)
 - ✅ Tests de validation des tickets
 - ✅ Sync GitHub (macro/epic generation)
 - ✅ Backlog publishing
 
-### ✅ Suivi backlog GitHub/local
-**État**: aligné et fermé
+### ✅ Packaging opérable
+**État**: COMPLÉTÉ
 
-- ✅ Backlog GitHub: 0 issue ouverte
-- ✅ Synchronisation locale: `doc/tickets` et `.tickets-local` alignés
-- ✅ Référence index: `doc/tickets/INDEX.md` (148 fermés / 0 ouverts)
+- ✅ `docker-compose up -d --build` lance une stack fonctionnelle
+- ✅ `scripts/smoke-test.sh` valide les endpoints critiques
+- ✅ Runbook d'installation/debug: `docs/runbook-docker-compose.md`
+
+### ⚠️ Suivi backlog GitHub/local
+**État**: backlog rouvert pour la suite des macros et migrations
+
+- ⚠️ Le backlog GitHub n'est plus a 0: nouveaux tickets ouverts sur MACRO-009 et migration PCM16LE-STT
+- ⚠️ Ne pas utiliser ce document comme source de comptage temps reel des issues; verifier GitHub directement
 
 ## Fonctionnalités du MVP
 
@@ -79,6 +89,8 @@
 
 ### 3. Providers Externes
 - Integration Home Assistant pour lumière
+- Integration Home Assistant pour scenes
+- Integration Home Assistant pour thermostat
 - Integration weather API pour météo
 - Webhook générique pour musique
 - Configuration env-based (stricte pour Leon)
@@ -96,9 +108,10 @@
 - Fermeture explicite via "exit"
 
 ### 6. Qualité
-- 396 tests passants
-- Correlatione IDs pour tous les appels
+- 467 tests passants
+- Correlation IDs pour tous les appels
 - Logs structurés avec source (local/leon/provider/fallback)
+- Smoke-test docker-compose vert sur backend + Leon mock + Home Assistant mock
 - Validation pre-commit (tickets, format)
 
 ## Validations Complétantes
@@ -135,7 +148,7 @@ Scenarios:
 
 ### Test Suite
 ```
-Total: 396 tests
+Total: 467 tests
 Status: 100% passing
 Categories:
 - Orchestrator et routage ✅
@@ -144,6 +157,7 @@ Categories:
 - Pipeline vocal (STT/TTS/latence/erreurs) ✅
 - Simulation/scénarios/intents/slots ✅
 - Résilience, rétention, contexte et sync tickets ✅
+- Observabilite, KPI et alerting ✅
 ```
 
 ## Commandes pour Démarrer
@@ -169,19 +183,22 @@ ASSISTANT_VOICE_ENGINE=real python3 -m src.assistant.prototype_voice
 
 **Obligatoires** (Leon - strict mode):
 ```bash
-LEON_HTTP_API_URL=http://localhost:1337
-LEON_PACKAGE_NAME="en"
-LEON_MODULE_NAME="en"
-LEON_ACTION_NAME="en"
+LEON_API_URL=http://localhost:1337
+LEON_API_ENDPOINT=/api/query
+LEON_TIMEOUT_SECONDS=5
+LEON_RETRY_ATTEMPTS=1
+LEON_RETRY_BACKOFF_SECONDS=0
 ```
 
 **Optionnelles** (Providers):
 ```bash
 HOME_ASSISTANT_URL=http://homeassistant.local:8123
 HOME_ASSISTANT_TOKEN=<token>
-WEATHER_PROVIDER_URL=https://api.weather.com/weather?city={CITY}
+HOME_ASSISTANT_SCENE_SOIREE=scene.soiree
+HOME_ASSISTANT_CLIMATE_ENTITY=climate.salon
+WEATHER_PROVIDER_URL_TEMPLATE=https://api.weather.com/weather?city={city}
 MUSIC_PROVIDER_URL=https://music.webhook.local/play
-MUSIC_PROVIDER_BEARER_TOKEN=<token>
+MUSIC_PROVIDER_AUTH_TOKEN=<token>
 ```
 
 ## Éléments Not in Scope (MVP)
@@ -195,25 +212,25 @@ MUSIC_PROVIDER_BEARER_TOKEN=<token>
 
 ## Prochaines Étapes (Post-MVP)
 
-1. **Déploiement**: Dockeriser l'application
-2. **Scalabilité**: Session storage (Redis/DB)
-3. **Richesse**: Plus de providers, plus d'intents
-4. **UX**: Interface web / mobile
-5. **Intelligence**: Fine-tuning sur Leon
-6. **Satellite**: Support ESP32-S3 (MACRO-006)
+1. **Scalabilité**: Session storage (Redis/DB)
+2. **Richesse**: Plus de providers, plus d'intents
+3. **UX**: Interface web / mobile
+4. **Intelligence**: Fine-tuning sur Leon
+5. **Satellite**: Support ESP32-S3 / abstraction firmware (MACRO-009)
+6. **Observabilite runtime**: integration live des KPI et alertes dans les services exposes
 7. **Productivité**: Calendrier, TODO (MACRO-003)
 
 ## Validation Finale
 
-✅ **MVP READY FOR PRODUCTION**
+✅ **MVP TECHNIQUE CONSOLIDÉ**
 
-Tous les tickets publiés ont été traités et fermés côté GitHub.  
-Le produit est déployable et fonctionnel sur les deux modes (terminal et vocal).  
-La validation courante confirme une base stable pour la suite des itérations.
+Le produit est deployable et fonctionnel sur les modes terminal, vocal et packaging docker-compose de demo.  
+La validation courante confirme une base stable pour la suite des iterations.  
+Le backlog produit reste actif pour les evolutions post-MVP et la couche d'abstraction firmware.
 
 ### Commits Finaux
 - f7a62a4: Wake word handler + centralization
 - ccc356a: System messages normalization
 - aa65a0f: Session manager integration
 
-**396 tests OK | 0 Pylance errors | 148 tickets fermés / 0 ouverts**
+**467 tests OK | smoke-test docker-compose OK | backlog d'evolution actif**
