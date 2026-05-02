@@ -38,6 +38,8 @@ Prerequis:
 Commande:
 
 ```bash
+python main.py --mode testbench
+# ou
 python scripts/run_base_testbench.py
 ```
 

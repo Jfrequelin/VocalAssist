@@ -21,6 +21,7 @@ python main.py --mode define
 python main.py --mode simulate
 python main.py --mode prototype
 python main.py --mode prototype-voice
+python main.py --mode testbench
 python -m unittest discover -s tests -p "test_*.py"
 python scripts/run_base_testbench.py
 ```
@@ -38,6 +39,8 @@ peripheriques abstraits:
 Commande:
 
 ```bash
+python main.py --mode testbench
+# ou
 python scripts/run_base_testbench.py
 ```
 
