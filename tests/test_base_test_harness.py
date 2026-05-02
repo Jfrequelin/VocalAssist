@@ -127,6 +127,30 @@ class TestAssistantFirmwareTestBench(unittest.TestCase):
         self.assertEqual(record.runtime_result.reason, "backend_rejected")
         self.assertIsNotNone(record.response_payload)
 
+    def test_control_commands_do_not_send_backend_payload(self) -> None:
+        config = EdgeBaseConfig(device_id="edge-01", server_base_url="http://127.0.0.1:8081")
+        microphone = StaticMicrophoneBuffer([CapturedAudio(transcript="/mute", audio_bytes=b"")])
+        speaker = _SpeakerSpy()
+        screen = MockScreenAdapter()
+
+        bench = AssistantFirmwareTestBench(
+            config=config,
+            transport=_TransportOk(),
+            microphone=microphone,
+            speaker=speaker,
+            screen=screen,
+        )
+
+        record = bench.run_once()
+
+        self.assertIsNotNone(record)
+        if record is None:
+            return
+        self.assertFalse(record.runtime_result.sent)
+        self.assertEqual(record.runtime_result.reason, "control_mute_on")
+        self.assertIsNone(record.request_payload)
+        self.assertIsNone(record.response_payload)
+
 
 if __name__ == "__main__":
     unittest.main()
