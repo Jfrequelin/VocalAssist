@@ -1,0 +1,76 @@
+{
+  "summary": {
+    "total_turns": 7,
+    "sent_turns": 1,
+    "rejected_turns": 6,
+    "backend_errors": 0,
+    "avg_latency_ms": 0.6,
+    "last_intent": "light",
+    "last_source": "local"
+  },
+  "timeline": [
+    {
+      "timestamp_ms": 1777734391312,
+      "sent": true,
+      "reason": "accepted",
+      "latency_ms": 4.03,
+      "status": "accepted",
+      "intent": "light",
+      "source": "local"
+    },
+    {
+      "timestamp_ms": 1777734391312,
+      "sent": false,
+      "reason": "wake_word_missing",
+      "latency_ms": 0.04,
+      "status": null,
+      "intent": null,
+      "source": null
+    },
+    {
+      "timestamp_ms": 1777734391312,
+      "sent": false,
+      "reason": "vad_rejected_low_voice",
+      "latency_ms": 0.02,
+      "status": null,
+      "intent": null,
+      "source": null
+    },
+    {
+      "timestamp_ms": 1777734391312,
+      "sent": false,
+      "reason": "control_mute_on",
+      "latency_ms": 0.02,
+      "status": null,
+      "intent": null,
+      "source": null
+    },
+    {
+      "timestamp_ms": 1777734391312,
+      "sent": false,
+      "reason": "muted",
+      "latency_ms": 0.02,
+      "status": null,
+      "intent": null,
+      "source": null
+    },
+    {
+      "timestamp_ms": 1777734391313,
+      "sent": false,
+      "reason": "control_mute_off",
+      "latency_ms": 0.02,
+      "status": null,
+      "intent": null,
+      "source": null
+    },
+    {
+      "timestamp_ms": 1777734391313,
+      "sent": false,
+      "reason": "control_status",
+      "latency_ms": 0.02,
+      "status": null,
+      "intent": null,
+      "source": null
+    }
+  ]
+}

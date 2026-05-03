@@ -71,6 +71,7 @@ Indicateurs runtime exposes:
 - timeline horodatee des evenements de session
 - export JSON de fin de session si `ASSISTANT_TESTBENCH_EXPORT_PATH` est defini
 - attente configurable apres silence (`empty_audio`) pour stabiliser le run reel
+- relecture locale de la capture micro en fin d'enregistrement (retour casque)
 
 Exemple d'entree micro simulee:
 
@@ -99,6 +100,9 @@ Arret:
 - `TESTBENCH_MIC_SECONDS`
 - `ASSISTANT_TESTBENCH_EXPORT_PATH`
 - `ASSISTANT_TESTBENCH_SILENCE_WAIT_SECONDS`
+- `ASSISTANT_TESTBENCH_REPLAY_CAPTURE`
+- `ASSISTANT_TESTBENCH_CAPTURE_DEVICE`
+- `ASSISTANT_TESTBENCH_PLAYBACK_DEVICE`
 
 ## Couverture de test
 

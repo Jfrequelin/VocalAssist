@@ -87,6 +87,13 @@ def handle_message(
 
     pending = PENDING_CLARIFICATIONS.get(conv_id)
     if pending is not None:
+        followup_intent = parse_intent(message)
+        if followup_intent not in {"unknown", pending.intent}:
+            # User started a new request; stop forcing old clarification flow.
+            del PENDING_CLARIFICATIONS[conv_id]
+            pending = None
+
+    if pending is not None:
         merged_slots: dict[str, Any] = dict(pending.slots)
         merged_slots.update(extract_slots(message, pending.intent))
 

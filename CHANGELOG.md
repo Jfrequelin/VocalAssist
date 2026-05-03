@@ -19,6 +19,7 @@ Le format suit une structure simple inspiree de Keep a Changelog.
 - Indicateurs runtime du testbench (latence, intent/source, compteurs cumules) affiches en console et ecran.
 - Export JSON optionnel du testbench avec resume de session et timeline horodatee des evenements.
 - Backoff silence configurable dans le testbench (5 secondes par defaut apres `empty_audio`).
+- Retour son de capture micro en mode testbench Linux (relecture casque en fin d'enregistrement).
 
 ## [2026-05-02]
 

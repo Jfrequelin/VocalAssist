@@ -4,6 +4,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
+import wave
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
@@ -58,15 +60,212 @@ class LinuxArecordMicrophoneAdapter:
         sample_rate_hz: int = 16000,
         channels: int = 1,
         arecord_binary: str | None = None,
+        replay_capture: bool = True,
+        playback_binary: str | None = None,
+        capture_device: str | None = None,
+        playback_device: str | None = None,
+        phrase_mode: bool = False,
+        max_capture_seconds: float = 10.0,
+        end_silence_seconds: float = 1.0,
+        vad_start_threshold: float = 120.0,
+        vad_silence_threshold: float = 80.0,
+        vad_chunk_seconds: float = 0.2,
     ) -> None:
         self._transcribe = transcribe
         self._prompt = prompt
-        self._duration_seconds = max(1, duration_seconds)
-        self._sample_rate_hz = max(8000, sample_rate_hz)
-        self._channels = max(1, channels)
+        self._duration_seconds: int = max(1, duration_seconds)
+        self._sample_rate_hz: int = max(8000, sample_rate_hz)
+        self._channels: int = max(1, channels)
         self._arecord_binary = arecord_binary or shutil.which("arecord") or ""
         if not self._arecord_binary:
             raise RuntimeError("arecord introuvable")
+        self._replay_capture = replay_capture
+        self._playback_binary = playback_binary or shutil.which("aplay") or shutil.which("pw-play") or shutil.which("paplay")
+        self._capture_device = capture_device.strip() if isinstance(capture_device, str) else None
+        self._playback_device = playback_device.strip() if isinstance(playback_device, str) else None
+        self._phrase_mode = phrase_mode
+        self._max_capture_seconds = max(2.0, max_capture_seconds)
+        self._end_silence_seconds = max(0.3, end_silence_seconds)
+        self._vad_start_threshold = max(1.0, vad_start_threshold)
+        self._vad_silence_threshold = max(1.0, vad_silence_threshold)
+        self._vad_chunk_seconds = min(max(0.05, vad_chunk_seconds), 1.0)
+
+    def _build_arecord_command(self, *, wav_path: str, sample_rate_hz: int, channels: int) -> list[str]:
+        command = [
+            self._arecord_binary,
+            "-q",
+            "-d",
+            str(self._duration_seconds),
+            "-f",
+            "S16_LE",
+            "-c",
+            str(channels),
+            "-r",
+            str(sample_rate_hz),
+        ]
+        if self._capture_device:
+            command.extend(["-D", self._capture_device])
+        command.append(wav_path)
+        return command
+
+    def _capture_wav(self, wav_path: str) -> bool:
+        candidates: list[tuple[int, int]] = [(self._sample_rate_hz, self._channels)]
+        fallback_pairs = [
+            (self._sample_rate_hz, 2),
+            (44100, self._channels),
+            (44100, 2),
+        ]
+        for pair in fallback_pairs:
+            if pair not in candidates:
+                candidates.append(pair)
+
+        first_failure = ""
+        for sample_rate_hz, channels in candidates:
+            command = self._build_arecord_command(
+                wav_path=wav_path,
+                sample_rate_hz=sample_rate_hz,
+                channels=channels,
+            )
+            completed = subprocess.run(command, check=False, capture_output=True, text=True)
+            if completed.returncode == 0:
+                if sample_rate_hz != self._sample_rate_hz or channels != self._channels:
+                    print(
+                        "Audio: fallback capture ALSA actif "
+                        f"(sample_rate_hz={sample_rate_hz}, channels={channels})"
+                    )
+                self._sample_rate_hz = sample_rate_hz
+                self._channels = channels
+                return True
+
+            stderr = (completed.stderr or "").strip()
+            if not first_failure and stderr:
+                first_failure = stderr
+
+        if first_failure:
+            print(f"Audio: echec capture arecord ({first_failure})")
+        return False
+
+    def _capture_phrase_mode_wav(self, wav_path: str) -> bool:
+        candidates: list[tuple[int, int]] = [(self._sample_rate_hz, self._channels)]
+        fallback_pairs = [
+            (self._sample_rate_hz, 2),
+            (44100, self._channels),
+            (44100, 2),
+        ]
+        for pair in fallback_pairs:
+            if pair not in candidates:
+                candidates.append(pair)
+
+        for sample_rate_hz, channels in candidates:
+            raw_bytes = self._capture_raw_until_silence(
+                sample_rate_hz=sample_rate_hz,
+                channels=channels,
+            )
+            if raw_bytes is None:
+                continue
+            if not raw_bytes:
+                return False
+
+            with wave.open(wav_path, "wb") as wav_handle:
+                wav_handle.setnchannels(channels)
+                wav_handle.setsampwidth(2)
+                wav_handle.setframerate(sample_rate_hz)
+                wav_handle.writeframes(raw_bytes)
+
+            if sample_rate_hz != self._sample_rate_hz or channels != self._channels:
+                print(
+                    "Audio: fallback capture ALSA actif "
+                    f"(sample_rate_hz={sample_rate_hz}, channels={channels})"
+                )
+            self._sample_rate_hz = sample_rate_hz
+            self._channels = channels
+            return True
+
+        print("Audio: echec capture arecord (mode phrase)")
+        return False
+
+    def _capture_raw_until_silence(self, *, sample_rate_hz: int, channels: int) -> bytes | None:
+        command = [
+            self._arecord_binary,
+            "-q",
+            "-f",
+            "S16_LE",
+            "-c",
+            str(channels),
+            "-r",
+            str(sample_rate_hz),
+            "-t",
+            "raw",
+        ]
+        if self._capture_device:
+            command.extend(["-D", self._capture_device])
+
+        process = subprocess.Popen(  # noqa: S603
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        bytes_per_frame = 2 * max(1, channels)
+        chunk_frames = max(1, int(sample_rate_hz * self._vad_chunk_seconds))
+        chunk_size = chunk_frames * bytes_per_frame
+
+        chunks: list[bytes] = []
+        speech_started = False
+        silence_acc = 0.0
+        started_at = time.monotonic()
+
+        try:
+            if process.stdout is None:
+                return None
+
+            while True:
+                elapsed = time.monotonic() - started_at
+                if elapsed >= self._max_capture_seconds:
+                    break
+
+                chunk = process.stdout.read(chunk_size)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+
+                avg_amp = self._avg_abs_amplitude_pcm16le(chunk)
+                if avg_amp >= self._vad_start_threshold:
+                    speech_started = True
+                    silence_acc = 0.0
+                    continue
+
+                if speech_started and avg_amp <= self._vad_silence_threshold:
+                    silence_acc += self._vad_chunk_seconds
+                    if silence_acc >= self._end_silence_seconds:
+                        break
+                elif speech_started:
+                    silence_acc = 0.0
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
+        if not speech_started:
+            return b""
+        return b"".join(chunks)
+
+    def _avg_abs_amplitude_pcm16le(self, chunk: bytes) -> float:
+        if len(chunk) < 2:
+            return 0.0
+
+        total_abs = 0
+        sample_count = 0
+        for idx in range(0, len(chunk) - 1, 2):
+            sample = int.from_bytes(chunk[idx : idx + 2], byteorder="little", signed=True)
+            total_abs += abs(sample)
+            sample_count += 1
+
+        if sample_count == 0:
+            return 0.0
+        return total_abs / sample_count
 
     def capture(self) -> CapturedAudio | None:
         try:
@@ -81,22 +280,16 @@ class LinuxArecordMicrophoneAdapter:
             with tempfile.NamedTemporaryFile(prefix="assistantvocal-", suffix=".wav", delete=False) as handle:
                 temp_path = handle.name
 
-            command = [
-                self._arecord_binary,
-                "-q",
-                "-d",
-                str(self._duration_seconds),
-                "-f",
-                "S16_LE",
-                "-c",
-                str(self._channels),
-                "-r",
-                str(self._sample_rate_hz),
-                temp_path,
-            ]
-            completed = subprocess.run(command, check=False)
-            if completed.returncode != 0:
+            if self._phrase_mode:
+                captured = self._capture_phrase_mode_wav(temp_path)
+            else:
+                captured = self._capture_wav(temp_path)
+
+            if not captured:
                 return CapturedAudio(transcript="", audio_bytes=b"")
+
+            if self._replay_capture:
+                self._replay_wav(temp_path)
 
             transcript = self._transcribe(temp_path).strip()
             if not transcript:
@@ -110,6 +303,18 @@ class LinuxArecordMicrophoneAdapter:
                     os.remove(temp_path)
                 except OSError:
                     pass
+
+    def _replay_wav(self, wav_path: str) -> None:
+        if not self._playback_binary:
+            return
+        if self._playback_binary.endswith("aplay"):
+            command = [self._playback_binary, "-q"]
+            if self._playback_device:
+                command.extend(["-D", self._playback_device])
+            command.append(wav_path)
+            subprocess.run(command, check=False)
+            return
+        subprocess.run([self._playback_binary, wav_path], check=False)
 
 
 class ConsoleSpeakerAdapter:
@@ -128,16 +333,37 @@ class LinuxSystemSpeakerAdapter:
 
     def __init__(self) -> None:
         self.played_messages: list[str] = []
-        self._binary = shutil.which("spd-say") or shutil.which("espeak") or ""
+        requested_engine = os.getenv("ASSISTANT_TTS_ENGINE", "auto").strip().lower()
+        spd_say = shutil.which("spd-say") or ""
+        espeak = shutil.which("espeak") or ""
+
+        if requested_engine == "spd-say":
+            self._binary = spd_say
+        elif requested_engine == "espeak":
+            self._binary = espeak
+        else:
+            self._binary = spd_say or espeak
+
         if not self._binary:
             raise RuntimeError("aucun binaire TTS systeme trouve (spd-say/espeak)")
+        self._warmup_done = False
+        self._warmup_enabled = os.getenv("ASSISTANT_TTS_WARMUP", "true").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
     def play(self, text: str) -> None:
         self.played_messages.append(text)
         if not text.strip():
             return
         if self._binary.endswith("spd-say"):
-            subprocess.run([self._binary, text], check=False)
+            if self._warmup_enabled and not self._warmup_done:
+                # Warm-up one-shot to reduce first-phoneme clipping on some ALSA/Pulse setups.
+                subprocess.run([self._binary, "-w", " "], check=False)
+                self._warmup_done = True
+            subprocess.run([self._binary, "-w", text], check=False)
             return
         subprocess.run([self._binary, "-v", "fr", text], check=False)
 

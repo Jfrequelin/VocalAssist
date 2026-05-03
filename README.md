@@ -55,6 +55,9 @@ Variables de simulation complete:
 - `TESTBENCH_MIC_SECONDS` duree de capture arecord (defaut `3`)
 - `ASSISTANT_TESTBENCH_EXPORT_PATH` chemin d'export d'un snapshot JSON de session
 - `ASSISTANT_TESTBENCH_SILENCE_WAIT_SECONDS` attente apres silence (`empty_audio`, defaut `5`)
+- `ASSISTANT_TESTBENCH_REPLAY_CAPTURE=true|false` rejoue chaque capture micro dans le casque (defaut `true`)
+- `ASSISTANT_TESTBENCH_CAPTURE_DEVICE` device ALSA capture (ex: `hw:CARD=Generic_1,DEV=0`)
+- `ASSISTANT_TESTBENCH_PLAYBACK_DEVICE` device ALSA playback (utilise avec `aplay`)
 
 Commandes runtime testbench:
 

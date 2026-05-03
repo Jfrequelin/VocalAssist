@@ -192,6 +192,36 @@ class TestAssistantFirmwareTestBench(unittest.TestCase):
         self.assertEqual(second.runtime_result.reason, "accepted")
         self.assertTrue(second.transcript.lower().startswith("nova "))
 
+    def test_force_wake_word_prefix_sends_non_prefixed_transcript(self) -> None:
+        config = EdgeBaseConfig(
+            device_id="edge-01",
+            server_base_url="http://127.0.0.1:8081",
+            min_voice_chars=4,
+        )
+        microphone = StaticMicrophoneBuffer(
+            [CapturedAudio(transcript="quelle heure est-il", audio_bytes=b"dummy-audio")]
+        )
+        speaker = _SpeakerSpy()
+        screen = MockScreenAdapter()
+
+        bench = AssistantFirmwareTestBench(
+            config=config,
+            transport=_TransportOk(),
+            microphone=microphone,
+            speaker=speaker,
+            screen=screen,
+            force_wake_word_prefix=True,
+        )
+
+        record = bench.run_once()
+
+        self.assertIsNotNone(record)
+        if record is None:
+            return
+        self.assertTrue(record.runtime_result.sent)
+        self.assertEqual(record.runtime_result.reason, "accepted")
+        self.assertTrue(record.transcript.lower().startswith("nova "))
+
 
 if __name__ == "__main__":
     unittest.main()

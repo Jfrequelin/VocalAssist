@@ -151,6 +151,15 @@ class TestOrchestrator(unittest.TestCase):
         self.assertEqual(second.routing_trace.get("reason"), "clarification_resolved")
         self.assertIn("paris", second.answer)
 
+    def test_new_intent_interrupts_pending_clarification(self) -> None:
+        first = handle_message("allume la lumiere", use_leon_fallback=True, conversation_id="conv-6")
+        self.assertEqual(first.source, "local-clarification")
+
+        second = handle_message("quelle heure est-il", use_leon_fallback=True, conversation_id="conv-6")
+        self.assertEqual(second.source, "local")
+        self.assertEqual(second.intent, "time")
+        self.assertEqual(second.routing_trace.get("route"), "local")
+
     @patch("src.assistant.orchestrator.LeonClient")
     def test_repeated_failures_open_circuit(self, mock_leon_cls: Any) -> None:
         LEON_CIRCUIT_BREAKER.failure_threshold = 2

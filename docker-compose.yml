@@ -5,9 +5,9 @@ services:
       dockerfile: Dockerfile.backend
     container_name: assistant-backend
     environment:
-      LEON_API_URL: http://leon-mock:1337
+      LEON_API_URL: ${LEON_API_URL:-http://leon-mock:1337}
       LEON_API_ENDPOINT: /api/query
-      LEON_TIMEOUT_SECONDS: "5"
+      LEON_TIMEOUT_SECONDS: "30"
       LEON_RETRY_ATTEMPTS: "1"
       LEON_RETRY_BACKOFF_SECONDS: "0"
       HOME_ASSISTANT_URL: http://ha-mock:8123
@@ -28,6 +28,39 @@ services:
       interval: 10s
       timeout: 3s
       retries: 8
+
+  # Proxy LLM OpenAI-compatible (GitHub Models, Ollama, etc.)
+  # Activation: docker compose --profile llm up
+  # Requis: LLM_PROXY_ENDPOINT, LLM_PROXY_API_KEY, LLM_PROXY_MODEL dans .env
+  # Exemple GitHub Models:
+  #   LEON_API_URL=http://llm-proxy:1337
+  #   LLM_PROXY_ENDPOINT=https://models.inference.ai.azure.com
+  #   LLM_PROXY_API_KEY=<votre GITHUB_TOKEN>
+  #   LLM_PROXY_MODEL=gpt-4o-mini
+  # Exemple Ollama local:
+  #   LLM_PROXY_ENDPOINT=http://host.docker.internal:11434/v1
+  #   LLM_PROXY_API_KEY=ollama
+  #   LLM_PROXY_MODEL=qwen2.5:3b
+  llm-proxy:
+    profiles: ["llm"]
+    image: python:3.12-slim
+    container_name: llm-proxy
+    working_dir: /app
+    volumes:
+      - ./:/app:ro
+    command: ["python", "scripts/llm_proxy_server.py", "--host", "0.0.0.0", "--port", "1337"]
+    environment:
+      LLM_PROXY_ENDPOINT: ${LLM_PROXY_ENDPOINT}
+      LLM_PROXY_API_KEY: ${LLM_PROXY_API_KEY}
+      LLM_PROXY_MODEL: ${LLM_PROXY_MODEL:-gpt-4o-mini}
+      LLM_PROXY_MAX_TOKENS: ${LLM_PROXY_MAX_TOKENS:-200}
+      LLM_PROXY_TEMPERATURE: ${LLM_PROXY_TEMPERATURE:-0.7}
+      LLM_PROXY_SYSTEM_PROMPT: ${LLM_PROXY_SYSTEM_PROMPT:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:1337/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
   leon-mock:
     image: python:3.12-slim

@@ -186,6 +186,151 @@ Variables utiles pour le prototype edge:
 
 Matrice de tests terrain et stratégie réseau: `docs/EDGE-NETWORK-VALIDATION.md`.
 
+Lancement rapide du profil terrain (Linux):
+
+```bash
+# Mode local in-process (sans backend externe)
+./scripts/run_edge_field_profile.sh local
+
+# Mode HTTP (backend docker-compose sur 127.0.0.1:18081)
+./scripts/run_edge_field_profile.sh http
+```
+
+Surcharges courantes avant lancement:
+
+```bash
+ASSISTANT_TESTBENCH_CAPTURE_DEVICE=hw:CARD=Generic_1,DEV=0 \
+ASSISTANT_TESTBENCH_PLAYBACK_DEVICE=hw:CARD=Generic_1,DEV=0 \
+./scripts/run_edge_field_profile.sh local
+```
+
+Casque Bluetooth (PipeWire/Pulse):
+
+- Le script `run_edge_field_profile.sh` selectionne maintenant automatiquement:
+  - `ASSISTANT_TESTBENCH_CAPTURE_DEVICE=pulse`
+  - `ASSISTANT_TESTBENCH_PLAYBACK_DEVICE=default`
+  - `ASSISTANT_TESTBENCH_REPLAY_CAPTURE=false`
+
+- Commande recommandee pour test micro BT:
+
+```bash
+TESTBENCH_MIC_SECONDS=2 ./scripts/run_edge_field_profile.sh http
+```
+
+- Optionnel: forcer explicitement la capture BT via Pulse:
+
+```bash
+ASSISTANT_TESTBENCH_CAPTURE_DEVICE=pulse \
+ASSISTANT_TESTBENCH_PLAYBACK_DEVICE=default \
+ASSISTANT_TESTBENCH_REPLAY_CAPTURE=false \
+./scripts/run_edge_field_profile.sh http
+```
+
+- Sensibilite STT utile pour micro Bluetooth (niveau d'entree plus faible):
+
+```bash
+ASSISTANT_STT_MIN_AVG_AMPLITUDE=40 \
+ASSISTANT_STT_NO_SPEECH_THRESHOLD=0.6 \
+./scripts/run_edge_field_profile.sh http
+```
+
+- Fin de phrase automatique (actif par defaut):
+
+```bash
+ASSISTANT_TESTBENCH_PHRASE_MODE=true \
+ASSISTANT_TESTBENCH_END_SILENCE_SECONDS=1.0 \
+ASSISTANT_TESTBENCH_MAX_CAPTURE_SECONDS=10 \
+./scripts/run_edge_field_profile.sh http
+```
+
+- Reglage VAD fin de phrase (casque Bluetooth):
+
+```bash
+ASSISTANT_TESTBENCH_VAD_START_THRESHOLD=60 \
+ASSISTANT_TESTBENCH_VAD_SILENCE_THRESHOLD=30 \
+./scripts/run_edge_field_profile.sh http
+```
+
+Troubleshooting micro/speaker Linux:
+
+- Si `arecord` remonte `Nombre de canaux non disponible`, le testbench applique un fallback automatique (stereo) sur la capture ALSA.
+- Pour verifier le speaker analogique local:
+
+```bash
+speaker-test -D hw:CARD=Generic_1,DEV=0 -c 2 -t sine -f 440 -l 1
+```
+
+- Pour verifier le TTS systeme:
+
+```bash
+spd-say "Test audio assistant vocal"
+```
+
+- Si le debut de phrase est tronque (`assistant` -> `sistant`), activer/garder le warm-up TTS (actif par defaut):
+
+```bash
+ASSISTANT_TTS_WARMUP=true ./scripts/run_edge_field_profile.sh http
+```
+
+- Pour forcer un moteur TTS:
+
+```bash
+ASSISTANT_TTS_ENGINE=spd-say ./scripts/run_edge_field_profile.sh http
+# ou
+ASSISTANT_TTS_ENGINE=espeak ./scripts/run_edge_field_profile.sh http
+```
+
+## Proxy LLM (llm_proxy_server.py)
+
+Remplace `leon-mock` par un vrai LLM via tout endpoint compatible OpenAI (GitHub Models, Ollama, OpenAI...).
+
+### Activation avec Docker Compose
+
+```bash
+# 1. Créer .env à partir de .env.example
+cp .env.example .env
+# Éditer .env avec vos valeurs (LEON_API_URL, LLM_PROXY_*)
+
+# 2. Lancer la stack avec le profil llm
+docker compose --profile llm up --build -d
+
+# 3. Lancer le testbench en mode LLM
+TESTBENCH_MIC_SECONDS=3 ./scripts/run_edge_field_profile.sh http
+```
+
+### Exemples de configuration .env
+
+**GitHub Models (avec GITHUB_TOKEN):**
+```env
+LEON_API_URL=http://llm-proxy:1337
+LLM_PROXY_ENDPOINT=https://models.inference.ai.azure.com
+LLM_PROXY_API_KEY=<votre GITHUB_TOKEN>
+LLM_PROXY_MODEL=gpt-4o-mini
+```
+
+**Ollama local:**
+```env
+LEON_API_URL=http://llm-proxy:1337
+LLM_PROXY_ENDPOINT=http://host.docker.internal:11434/v1
+LLM_PROXY_API_KEY=ollama
+LLM_PROXY_MODEL=qwen2.5:3b
+```
+
+### Test rapide du proxy seul
+
+```bash
+# Démarrer le proxy directement (hors Docker)
+LLM_PROXY_ENDPOINT=https://models.inference.ai.azure.com \
+LLM_PROXY_API_KEY=$GITHUB_TOKEN \
+LLM_PROXY_MODEL=gpt-4o-mini \
+python scripts/llm_proxy_server.py
+
+# Test
+curl -s http://localhost:1337/api/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Quelle heure est-il ?"}' | python -m json.tool
+```
+
 ## Benchmark latence vocale E2E
 
 Script reproductible pour valider le SLO de latence médiane E2E.

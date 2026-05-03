@@ -1,0 +1,22 @@
+{
+  "summary": {
+    "total_turns": 1,
+    "sent_turns": 1,
+    "rejected_turns": 0,
+    "backend_errors": 0,
+    "avg_latency_ms": 3.08,
+    "last_intent": "light",
+    "last_source": "local-clarification"
+  },
+  "timeline": [
+    {
+      "timestamp_ms": 1777734599826,
+      "sent": true,
+      "reason": "accepted",
+      "latency_ms": 3.08,
+      "status": "accepted",
+      "intent": "light",
+      "source": "local-clarification"
+    }
+  ]
+}

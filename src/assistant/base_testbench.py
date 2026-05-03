@@ -141,19 +141,27 @@ def summarize_turn(
     intent = "-"
     source = "-"
     status = "-"
+    answer = "-"
     if isinstance(response_payload, dict):
         raw_intent = response_payload.get("intent")
         raw_source = response_payload.get("source")
         raw_status = response_payload.get("status")
+        raw_answer = response_payload.get("answer")
+        if not isinstance(raw_answer, str):
+            raw_answer = response_payload.get("answer_text")
         if isinstance(raw_intent, str) and raw_intent.strip():
             intent = raw_intent.strip()
         if isinstance(raw_source, str) and raw_source.strip():
             source = raw_source.strip()
         if isinstance(raw_status, str) and raw_status.strip():
             status = raw_status.strip()
+        if isinstance(raw_answer, str) and raw_answer.strip():
+            answer = raw_answer.strip().replace("\n", " ")
+            if len(answer) > 120:
+                answer = answer[:117] + "..."
     return (
         f"turn: reason={reason}, latency_ms={latency_ms:.1f}, "
-        f"status={status}, intent={intent}, source={source}"
+        f"status={status}, intent={intent}, source={source}, answer={answer}"
     )
 
 
@@ -191,13 +199,48 @@ def build_transport(config: EdgeBaseConfig) -> TransportClient:
 
 def build_linux_microphone(config: EdgeBaseConfig) -> MicrophoneDevice:
     model_size = os.getenv("ASSISTANT_STT_MODEL", "small")
-    stt = FasterWhisperSpeechToText(model_size=model_size, language="fr")
+    no_speech_threshold = float(os.getenv("ASSISTANT_STT_NO_SPEECH_THRESHOLD", "0.6"))
+    min_avg_amplitude = float(os.getenv("ASSISTANT_STT_MIN_AVG_AMPLITUDE", "180"))
+    stt = FasterWhisperSpeechToText(
+        model_size=model_size,
+        language="fr",
+        no_speech_threshold=no_speech_threshold,
+        min_avg_amplitude=min_avg_amplitude,
+    )
     duration_seconds = int(os.getenv("TESTBENCH_MIC_SECONDS", "3"))
+    replay_capture = os.getenv("ASSISTANT_TESTBENCH_REPLAY_CAPTURE", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    capture_device = os.getenv("ASSISTANT_TESTBENCH_CAPTURE_DEVICE", "").strip() or None
+    playback_device = os.getenv("ASSISTANT_TESTBENCH_PLAYBACK_DEVICE", "").strip() or None
+    phrase_mode = os.getenv("ASSISTANT_TESTBENCH_PHRASE_MODE", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    max_capture_seconds = float(os.getenv("ASSISTANT_TESTBENCH_MAX_CAPTURE_SECONDS", "10"))
+    end_silence_seconds = float(os.getenv("ASSISTANT_TESTBENCH_END_SILENCE_SECONDS", "1.0"))
+    vad_start_threshold = float(os.getenv("ASSISTANT_TESTBENCH_VAD_START_THRESHOLD", "120"))
+    vad_silence_threshold = float(os.getenv("ASSISTANT_TESTBENCH_VAD_SILENCE_THRESHOLD", "80"))
+    vad_chunk_seconds = float(os.getenv("ASSISTANT_TESTBENCH_VAD_CHUNK_SECONDS", "0.2"))
     return LinuxArecordMicrophoneAdapter(
         transcribe=stt.transcribe,
         duration_seconds=duration_seconds,
         sample_rate_hz=config.sample_rate_hz,
         channels=config.channels,
+        replay_capture=replay_capture,
+        capture_device=capture_device,
+        playback_device=playback_device,
+        phrase_mode=phrase_mode,
+        max_capture_seconds=max_capture_seconds,
+        end_silence_seconds=end_silence_seconds,
+        vad_start_threshold=vad_start_threshold,
+        vad_silence_threshold=vad_silence_threshold,
+        vad_chunk_seconds=vad_chunk_seconds,
     )
 
 
@@ -277,18 +320,29 @@ def run_base_testbench() -> None:
     speaker = build_speaker()
     screen = build_screen()
 
+    force_wake_word_prefix = os.getenv("ASSISTANT_TESTBENCH_FORCE_WAKE_WORD_PREFIX", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
     bench = AssistantFirmwareTestBench(
         config=config,
         transport=transport,
         microphone=microphone,
         speaker=speaker,
         screen=screen,
+        force_wake_word_prefix=force_wake_word_prefix,
     )
 
     transport_mode = os.getenv("ASSISTANT_TESTBENCH_TRANSPORT", "local").strip().lower()
     peripheral_mode = os.getenv("ASSISTANT_TESTBENCH_PERIPHERALS", "auto").strip().lower()
     screen_mode = os.getenv("ASSISTANT_TESTBENCH_SCREEN", "auto").strip().lower()
     silence_wait_seconds = float(os.getenv("ASSISTANT_TESTBENCH_SILENCE_WAIT_SECONDS", "5"))
+    replay_capture = os.getenv("ASSISTANT_TESTBENCH_REPLAY_CAPTURE", "true").strip().lower()
+    capture_device = os.getenv("ASSISTANT_TESTBENCH_CAPTURE_DEVICE", "").strip() or "auto"
+    playback_device = os.getenv("ASSISTANT_TESTBENCH_PLAYBACK_DEVICE", "").strip() or "auto"
 
     print("=== Base de test firmware edge ===")
     print("Simulation complete: intents locaux, providers externes, fallback Leon, etat edge")
@@ -296,6 +350,10 @@ def run_base_testbench() -> None:
     print(f"Transport: {transport_mode} (local=in-process, http=backend distant)")
     print(f"Peripheriques: {peripheral_mode} (auto/system/mock)")
     print(f"Ecran: {screen_mode} (auto/tk/console)")
+    print(f"Replay capture: {replay_capture} (true/false)")
+    print(f"Capture device: {capture_device}")
+    print(f"Playback device: {playback_device}")
+    print(f"Force wake-word prefix: {str(force_wake_word_prefix).lower()} (true/false)")
     print(f"Silence wait: {silence_wait_seconds:.1f}s apres empty_audio")
     print("Commandes: /help /status /mute /unmute")
     print("Entrer une requete avec wake word (ex: nova quelle heure est-il)")
@@ -345,12 +403,19 @@ def run_base_testbench() -> None:
                 f"sample_rate={record.request_payload.get('sample_rate_hz')}"
             )
         if record.response_payload is not None:
+            source = record.response_payload.get("source")
+            answer = record.response_payload.get("answer")
+            if not isinstance(answer, str):
+                answer = record.response_payload.get("answer_text")
+            answer_text = answer.strip() if isinstance(answer, str) and answer.strip() else "-"
             print(
                 "response: "
                 f"status={record.response_payload.get('status')} "
                 f"api_version={record.response_payload.get('api_version')} "
-                f"intent={record.response_payload.get('intent')}"
+                f"intent={record.response_payload.get('intent')} "
+                f"source={source}"
             )
+            print(f"response_answer: {answer_text}")
             print(format_metrics_line(metrics))
 
         if apply_silence_backoff(reason=record.runtime_result.reason, wait_seconds=silence_wait_seconds):

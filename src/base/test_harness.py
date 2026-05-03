@@ -67,11 +67,13 @@ class AssistantFirmwareTestBench:
         microphone: MicrophoneDevice,
         speaker: SpeakerDevice,
         screen: ScreenDevice,
+        force_wake_word_prefix: bool = False,
     ) -> None:
         self._screen = screen
         self._microphone = microphone
         self._wake_word = config.wake_word.strip().lower()
         self._awaiting_followup_command = False
+        self._force_wake_word_prefix = force_wake_word_prefix
         self._recording_transport = RecordingTransport(transport)
         self._runtime = EdgeRuntime(
             config=config,
@@ -102,6 +104,12 @@ class AssistantFirmwareTestBench:
         effective_transcript = transcript
         if (
             self._awaiting_followup_command
+            and transcript.strip()
+            and not transcript.strip().lower().startswith(self._wake_word)
+        ):
+            effective_transcript = f"{self._wake_word} {transcript.strip()}"
+        elif (
+            self._force_wake_word_prefix
             and transcript.strip()
             and not transcript.strip().lower().startswith(self._wake_word)
         ):

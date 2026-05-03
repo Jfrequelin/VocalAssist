@@ -1,0 +1,22 @@
+{
+  "summary": {
+    "total_turns": 1,
+    "sent_turns": 0,
+    "rejected_turns": 1,
+    "backend_errors": 0,
+    "avg_latency_ms": 4320.32,
+    "last_intent": "-",
+    "last_source": "-"
+  },
+  "timeline": [
+    {
+      "timestamp_ms": 1777735036809,
+      "sent": false,
+      "reason": "empty_audio",
+      "latency_ms": 4320.32,
+      "status": null,
+      "intent": null,
+      "source": null
+    }
+  ]
+}
