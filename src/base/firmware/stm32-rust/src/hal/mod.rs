@@ -282,6 +282,9 @@ pub fn decode_base64(src: &str, dst: &mut IoBuffer) -> Result<usize, HalError> {
         }
     }
     let bytes = src.as_bytes();
+    if bytes.len() % 4 != 0 {
+        return Err(HalError::InvalidArgument);
+    }
     let mut written = 0usize;
     let mut i = 0usize;
     while i + 3 < bytes.len() {
@@ -313,6 +316,18 @@ pub fn decode_base64(src: &str, dst: &mut IoBuffer) -> Result<usize, HalError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_base64_rejects_non_multiple_of_four() {
+        let mut dst = IoBuffer::new();
+        // 5 caractères = pas multiple de 4 → erreur attendue
+        assert_eq!(decode_base64("QUJDA", &mut dst), Err(HalError::InvalidArgument));
+        // 6 caractères = pas multiple de 4 → erreur attendue
+        assert_eq!(decode_base64("QUJDRA", &mut dst), Err(HalError::InvalidArgument));
+        // 8 caractères valides = ok
+        assert!(decode_base64("QUJDRA==", &mut dst).is_ok());
+    }
+
 
     // ── Implémentations de test ───────────────────────────────────────────────
 

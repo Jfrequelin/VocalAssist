@@ -120,8 +120,8 @@ impl StorageHal {
         if !self.card_present || max_bytes == 0 {
             return Ok(buf);
         }
-        let end = (self.read_cursor + max_bytes).min(self.simulated_file.len());
-        buf.extend_from_slice(&self.simulated_file[self.read_cursor..end])
+        let end = max_bytes.min(self.simulated_file.len());
+        buf.extend_from_slice(&self.simulated_file[..end])
             .map_err(|_| HalError::BufferOverflow)?;
         Ok(buf)
     }
@@ -305,5 +305,26 @@ mod tests {
         let count = sd.read_line(&mut line).unwrap();
         assert_eq!(count, 7);
         assert_eq!(line.as_str(), "ligne 1");
+    }
+
+    #[test]
+    fn read_file_is_independent_of_read_cursor() {
+        let mut sd = StorageHal::new(StorageConfig::default());
+        sd.open().unwrap();
+        sd.set_card_present(true);
+        sd.write_buf(b"hello world").unwrap();
+
+        // Avancer le curseur via read_buf
+        let mut tmp = IoBuffer::new();
+        let advanced = sd.read_buf(&mut tmp).unwrap();
+        assert_eq!(advanced, 11);
+
+        // read_file doit toujours lire depuis le début, indépendamment du curseur
+        let data = sd.read_file("/sd/edge.log", 5).unwrap();
+        assert_eq!(&data[..], b"hello");
+
+        // Une deuxième lecture via read_file retourne le même contenu
+        let data2 = sd.read_file("/sd/edge.log", 5).unwrap();
+        assert_eq!(&data2[..], b"hello");
     }
 }

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from time import sleep
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 from urllib import error, request
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 # Contrat d'appel Leon
@@ -87,7 +91,20 @@ class LeonClient:
                 with request.urlopen(req, timeout=self.timeout_seconds) as response:
                     raw = response.read().decode("utf-8")
                 break
-            except (error.URLError, TimeoutError, ValueError, OSError):
+            except TimeoutError as exc:
+                LOGGER.warning(
+                    "event=leon_network_error attempt=%d/%d error=timeout url=%s detail=%s",
+                    attempt + 1, attempts, url, exc,
+                )
+                if attempt + 1 >= attempts:
+                    return None
+                if self.retry_backoff_seconds > 0:
+                    sleep(self.retry_backoff_seconds)
+            except (error.URLError, ValueError, OSError) as exc:
+                LOGGER.warning(
+                    "event=leon_network_error attempt=%d/%d error=%s url=%s detail=%s",
+                    attempt + 1, attempts, type(exc).__name__, url, exc,
+                )
                 if attempt + 1 >= attempts:
                     return None
                 if self.retry_backoff_seconds > 0:

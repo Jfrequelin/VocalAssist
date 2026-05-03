@@ -248,11 +248,13 @@ impl AssistantPacket {
     /// Serialise le paquet dans un format JSON canonique.
     pub fn to_wire_json(&self) -> Result<JsonBuffer, HalError> {
         let mut json = JsonBuffer::new();
+        json.push_str("{\"correlation_id\":\"").map_err(|_| HalError::BufferOverflow)?;
+        push_json_escaped(&mut json, self.correlation_id.as_str())?;
+        json.push_str("\",\"device_id\":\"").map_err(|_| HalError::BufferOverflow)?;
+        push_json_escaped(&mut json, self.device_id.as_str())?;
         write!(
             json,
-            "{{\"correlation_id\":\"{}\",\"device_id\":\"{}\",\"timestamp_ms\":{},\"kind\":\"{}\",\"payload\":",
-            self.correlation_id,
-            self.device_id,
+            "\",\"timestamp_ms\":{},\"kind\":\"{}\",\"payload\":",
             self.timestamp_ms,
             self.kind().as_str(),
         )
@@ -272,11 +274,13 @@ impl AssistantPacket {
         encode_base64(&audio.bytes, &mut audio_base64)?;
 
         let mut json = JsonBuffer::new();
+        json.push_str("{\"correlation_id\":\"").map_err(|_| HalError::BufferOverflow)?;
+        push_json_escaped(&mut json, self.correlation_id.as_str())?;
+        json.push_str("\",\"device_id\":\"").map_err(|_| HalError::BufferOverflow)?;
+        push_json_escaped(&mut json, self.device_id.as_str())?;
         write!(
             json,
-            "{{\"correlation_id\":\"{}\",\"device_id\":\"{}\",\"timestamp_ms\":{},\"sample_rate_hz\":{},\"channels\":{},\"encoding\":\"{}\",\"audio_base64\":\"{}\"}}",
-            self.correlation_id,
-            self.device_id,
+            "\",\"timestamp_ms\":{},\"sample_rate_hz\":{},\"channels\":{},\"encoding\":\"{}\",\"audio_base64\":\"{}\"}}",
             self.timestamp_ms,
             audio.sample_rate_hz,
             audio.channels,
@@ -326,8 +330,9 @@ impl AssistantPacket {
                 json.push_str("\"}").map_err(|_| HalError::BufferOverflow)?;
             }
             AssistantPayload::Variable(variable) => {
-                write!(json, "{{\"name\":\"{}\",\"value_type\":\"", variable.name)
-                    .map_err(|_| HalError::BufferOverflow)?;
+                json.push_str("{\"name\":\"").map_err(|_| HalError::BufferOverflow)?;
+                push_json_escaped(json, variable.name.as_str())?;
+                json.push_str("\",\"value_type\":\"").map_err(|_| HalError::BufferOverflow)?;
                 match &variable.value {
                     VariableValue::Bool(value) => {
                         json.push_str("bool\",\"value\":")
@@ -359,13 +364,10 @@ impl AssistantPacket {
             AssistantPayload::Binary(binary) => {
                 let mut base64 = TextBuffer::new();
                 encode_base64(&binary.bytes, &mut base64)?;
-                write!(
-                    json,
-                    "{{\"mime_type\":\"{}\",\"data_base64\":\"{}\"}}",
-                    binary.mime_type,
-                    base64,
-                )
-                .map_err(|_| HalError::BufferOverflow)?;
+                json.push_str("{\"mime_type\":\"").map_err(|_| HalError::BufferOverflow)?;
+                push_json_escaped(json, binary.mime_type.as_str())?;
+                write!(json, "\",\"data_base64\":\"{}\"}}", base64)
+                    .map_err(|_| HalError::BufferOverflow)?;
             }
         }
         Ok(())
@@ -429,6 +431,48 @@ mod tests {
         assert!(json.contains("\"name\":\"muted\""));
         assert!(json.contains("\"value_type\":\"bool\""));
         assert!(json.contains("\"value\":true"));
+    }
+
+    #[test]
+    fn json_special_chars_in_correlation_id_are_escaped() {
+        let packet = AssistantPacket::text_utf8(
+            "corr\"with\"quotes",
+            "device\\slash",
+            0,
+            "hi",
+        )
+        .unwrap();
+        let json = packet.to_wire_json().unwrap();
+        // Les guillemets et backslash doivent être échappés
+        assert!(json.contains("\\\"with\\\""));
+        assert!(json.contains("device\\\\slash"));
+        // Le JSON doit être parseable
+        assert!(json.starts_with('{'));
+        assert!(json.ends_with('}'));
+    }
+
+    #[test]
+    fn json_special_chars_in_variable_name_are_escaped() {
+        let packet =
+            AssistantPacket::variable_bool("c", "d", 0, "name\"injected", true).unwrap();
+        let json = packet.to_wire_json().unwrap();
+        assert!(json.contains("name\\\"injected"));
+    }
+
+    #[test]
+    fn audio_request_json_special_chars_in_ids_are_escaped() {
+        let packet = AssistantPacket::audio_pcm16(
+            "corr\"q",
+            "dev\\x",
+            0,
+            16_000,
+            1,
+            b"AB",
+        )
+        .unwrap();
+        let json = packet.to_edge_audio_request_json().unwrap();
+        assert!(json.contains("corr\\\"q"));
+        assert!(json.contains("dev\\\\x"));
     }
 
     #[test]
