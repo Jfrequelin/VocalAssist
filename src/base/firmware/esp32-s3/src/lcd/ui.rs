@@ -240,12 +240,12 @@ pub fn run_wifi_provisioning(
 
         // Afficher les indicateurs de scroll
         if offset > 0 {
-            // Flèche haut (↑)
-            draw_text(lcd, "^", 175, 78)?;
+            // Flèche haut (↑) — juste après le séparateur
+            draw_text(lcd, "^", 170, 86)?;
         }
         if offset + max_visible_items < ssids.len() {
             // Flèche bas (↓)
-            draw_text(lcd, "v", 175, 295)?;
+            draw_text(lcd, "v", 170, 285)?;
         }
 
         Ok(())
