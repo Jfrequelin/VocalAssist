@@ -1,0 +1,9 @@
+# Configuration ESP-IDF pour esp-idf-svc / embuild
+# Voir : https://github.com/esp-rs/esp-idf-template
+
+[esp-idf-sys]
+# Version ESP-IDF installée localement
+esp_idf_version = "v5.2.2"
+
+# sdkconfig par défaut (sans partitions custom — géré via sdkconfig.defaults)
+sdkconfig_defaults = ["sdkconfig.defaults"]

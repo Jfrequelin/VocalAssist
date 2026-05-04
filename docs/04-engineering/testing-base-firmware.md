@@ -6,7 +6,7 @@ le format d'echange avec l'assistant sur `POST /edge/audio` (contrat v2).
 ## Objectif
 
 - Tester localement la boucle firmware -> assistant sans hardware reel.
-- Garder un point d'entree simple pour validation rapide avant integration STM32.
+- Garder un point d'entree simple pour validation rapide avant integration ESP32-S3.
 - Reproduire l'echange de payloads avec traces exploitables en tests unitaires.
 - Simuler une base complete (routing local, providers, fallback Leon) sur Linux.
 

@@ -13,8 +13,6 @@
 ///   Write cmd  : opcode 0x02 → commande = (0x02<<24)|(cmd<<8)
 ///   Write color: opcode 0x32 → commande = (0x32<<24)|(0x2C<<8) pour RAMWR
 
-pub mod ui;
-
 use anyhow::Result;
 use esp_idf_hal::delay::FreeRtos;
 use esp_idf_sys::*;

@@ -1,0 +1,16 @@
+# Cible Xtensa LX7 (ESP32-S3) — toolchain esp installée via espup
+[build]
+target = "xtensa-esp32s3-espidf"
+
+[target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+
+# Utiliser les outils ESP-IDF déjà activés via export.sh
+# (évite le conflit de version entre espup-GCC et IDF-attendu)
+[env]
+ESP_IDF_TOOLS_INSTALL_DIR = "fromenv"
+LIBCLANG_PATH = "/home/rlv/.rustup/toolchains/esp/xtensa-esp32-elf-clang/esp-20.1.1_20250829/esp-clang/lib"
+
+[unstable]
+build-std = ["std", "panic_abort"]

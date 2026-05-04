@@ -11,12 +11,12 @@ use esp_idf_svc::{
 use log::{error, info};
 
 mod lcd;
+mod ui;
 mod wifi;
 mod server;
 mod touch;
 
 use lcd::LcdDisplay;
-use lcd::ui;
 use wifi::WifiManager;
 use server::ServerPing;
 use touch::CST816S;
@@ -26,6 +26,56 @@ use touch::CST816S;
 const DEFAULT_SERVER_HOST: &str = "192.168.1.100";
 #[allow(dead_code)]
 const DEFAULT_SERVER_PORT: u16  = 8080;
+
+const BOOT_BUTTON_GPIO: i32 = 0;
+const LONG_PRESS_RESET_MS: u32 = 3_000;
+const LONG_PRESS_POLL_MS: u32 = 50;
+const BOOT_RESET_CHECK_INTERVAL_MS: u32 = 200;
+
+fn is_boot_button_long_pressed() -> bool {
+    unsafe {
+        let cfg = esp_idf_svc::sys::gpio_config_t {
+            pin_bit_mask: 1u64 << BOOT_BUTTON_GPIO,
+            mode: esp_idf_svc::sys::gpio_mode_t_GPIO_MODE_INPUT,
+            pull_up_en: esp_idf_svc::sys::gpio_pullup_t_GPIO_PULLUP_ENABLE,
+            pull_down_en: esp_idf_svc::sys::gpio_pulldown_t_GPIO_PULLDOWN_DISABLE,
+            intr_type: esp_idf_svc::sys::gpio_int_type_t_GPIO_INTR_DISABLE,
+        };
+        esp_idf_svc::sys::gpio_config(&cfg);
+
+        // BOOT est actif à l'état bas.
+        if esp_idf_svc::sys::gpio_get_level(BOOT_BUTTON_GPIO) != 0 {
+            return false;
+        }
+
+        let mut elapsed = 0u32;
+        while elapsed < LONG_PRESS_RESET_MS {
+            FreeRtos::delay_ms(LONG_PRESS_POLL_MS);
+            if esp_idf_svc::sys::gpio_get_level(BOOT_BUTTON_GPIO) != 0 {
+                return false;
+            }
+            elapsed += LONG_PRESS_POLL_MS;
+        }
+        true
+    }
+}
+
+fn maybe_factory_reset(
+    wifi: &mut WifiManager,
+    nvs_partition: EspDefaultNvsPartition,
+) -> Result<()> {
+    if !is_boot_button_long_pressed() {
+        return Ok(());
+    }
+
+    info!("[RESET] Appui long BOOT détecté — effacement paramètres");
+    let _ = wifi.clear_credentials();
+    let mut server_cfg = ServerPing::new(nvs_partition)?;
+    let _ = server_cfg.clear_address();
+    info!("[RESET] Paramètres effacés — redémarrage");
+    FreeRtos::delay_ms(300);
+    unsafe { esp_idf_svc::sys::esp_restart() };
+}
 
 fn main() -> Result<()> {
     // ----------------------------------------------------------------
@@ -63,6 +113,9 @@ fn main() -> Result<()> {
         sysloop.clone(),
         nvs_partition.clone(),
     )?;
+
+    // Vérifie dès le boot, puis en continu en boucle principale.
+    maybe_factory_reset(&mut wifi, nvs_partition.clone())?;
 
     let wifi_result = if let Some((ssid, password)) = wifi.load_credentials() {
         // Credentials connus → connexion directe
@@ -108,7 +161,7 @@ fn main() -> Result<()> {
     // ----------------------------------------------------------------
 
     info!("[P0-03] Test lien serveur...");
-    let mut server = ServerPing::new(nvs_partition)?;
+    let mut server = ServerPing::new(nvs_partition.clone())?;
 
     // Utiliser l'adresse par défaut si rien en NVS
     // (server::ServerPing::new gère déjà le fallback)
@@ -129,11 +182,19 @@ fn main() -> Result<()> {
     info!("=== Phase 0 terminée — état READY ===");
     info!("Prochain: Phase 1 pipeline vocal (wake word, VAD, TTS)");
 
-    // Boucle principale — heartbeat log toutes les 30 s
+    // Boucle principale — heartbeat + surveillance appui long BOOT
+    let mut elapsed_heartbeat_ms: u32 = 0;
     loop {
-        FreeRtos::delay_ms(30_000);
-        info!("[HEARTBEAT] WiFi: {} | Serveur: {}",
-              if wifi.is_connected() { "OK" } else { "KO" },
-              if ping.ok { "OK" } else { "KO" });
+        maybe_factory_reset(&mut wifi, nvs_partition.clone())?;
+
+        FreeRtos::delay_ms(BOOT_RESET_CHECK_INTERVAL_MS);
+        elapsed_heartbeat_ms += BOOT_RESET_CHECK_INTERVAL_MS;
+
+        if elapsed_heartbeat_ms >= 30_000 {
+            elapsed_heartbeat_ms = 0;
+            info!("[HEARTBEAT] WiFi: {} | Serveur: {}",
+                  if wifi.is_connected() { "OK" } else { "KO" },
+                  if ping.ok { "OK" } else { "KO" });
+        }
     }
 }

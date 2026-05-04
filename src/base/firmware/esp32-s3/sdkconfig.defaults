@@ -1,0 +1,43 @@
+# sdkconfig.defaults — Waveshare ESP32-S3-Touch-LCD-1.85C-BOX-EN
+# Appliqué par embuild lors de la compilation ESP-IDF sous-jacente
+
+# Cible
+CONFIG_IDF_TARGET="esp32s3"
+
+# Flash 16 MB
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+# Utiliser la table de partitions par défaut (2 MB app + reste)
+# La table custom sera activée quand la carte sera connectée
+CONFIG_PARTITION_TABLE_TWO_OTA=n
+CONFIG_PARTITION_TABLE_SINGLE_APP=y
+
+# PSRAM 8 MB OCTAL
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_MEMTEST=n
+
+# Console USB-JTAG (stable, ne se reconnecte pas au démarrage de l'app)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# Console secondaire USB-JTAG : maintient les logs pendant le reinit CDC
+CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y
+
+# WiFi
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=8
+
+# NVS — credentials WiFi
+CONFIG_NVS_ENCRYPTION=n
+
+# Log niveau INFO par défaut
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y
+CONFIG_LOG_COLORS=y
+
+# Stack tâche principale
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# Watchdog
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10

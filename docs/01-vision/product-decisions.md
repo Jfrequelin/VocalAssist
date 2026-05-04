@@ -12,11 +12,38 @@
 
 Edge:
 - module cible: Waveshare ESP32-S3-Touch-LCD-1.85C-BOX-EN.
-- ecran LCD tactile 1.85" (360x360) disponible pour HMI locale.
 - audio embarque (micro + sortie haut-parleur) pour capture et restitution locales.
 - bouton mute materiel obligatoire.
 - LED d'etat recommandee.
 - batterie rechargeable, RTC et slot TF disponibles pour evolutions produit.
+
+### Caractéristiques techniques de la carte cible
+
+**MCU** : ESP32-S3R8 (ou variante)
+- Dual-core Xtensa LX7, 240 MHz
+- 512 KB SRAM + 8 MB PSRAM externe
+- Wi-Fi 2.4 GHz + Bluetooth LE 5.0
+
+**Écran LCD**
+- Taille : 1.85"
+- Résolution : 240 × 280
+- Interface : SPI
+- Driver : ST7789 / GC9A01 (selon modèle)
+
+**Tactile capacitif**
+- Contrôleur : GT911
+- Interface : I²C
+
+**Stockage**
+- Flash QSPI 16 MB (selon version)
+
+**Connectivité**
+- USB-C (alimentation + programmation/debug)
+- GPIO exposés via headers
+
+**Alimentation**
+- 5 V via USB-C
+- 3.3 V régulé interne
 
 ## Fonctionnalites accessibles avec le hardware retenu
 

@@ -1,7 +1,7 @@
 # 📋 Épics - Overview
 
-**Last Updated**: 2026-04-30  
-**Status**: 5 epics defined (127 story points total)
+**Last Updated**: 2026-05-04  
+**Status**: 6 epics defined
 
 ---
 
@@ -9,12 +9,12 @@
 
 | Epic | Domain | Status | Estimation | Priority | Timeline |
 |------|--------|--------|-----------|----------|----------|
-| 🟦 [EDGE-firmware-esp32-s3.md](EDGE-firmware-esp32-s3.md) | Firmware edge | 🔴 Not started | 50-55 pt | 🔴 Critical | Week 1-2 |
-| 🟩 [SRV-stc-tts-server.md](SRV-stc-tts-server.md) | Server central | 🟡 In progress | 37-40 pt | 🔴 Critical | Week 1-2 |
-| 🟧 [ORCH-orchestrator-local-first.md](ORCH-orchestrator-local-first.md) | Orchestration | 🟡 In progress | 36-40 pt | 🟠 High | Week 1-2 |
-| 🟣 [DOM-home-assistant.md](DOM-home-assistant.md) | Domotique | 🔴 Not started | 21-24 pt | 🟠 High | Week 2+ |
-| 🔴 [OBS-observability.md](OBS-observability.md) | Cross-cutting | 🟡 In progress | 25-29 pt | 🟠 High | Week 1-2 |
-| **TOTAL** | **-** | **-** | **169-188 pt** | **-** | **-** |
+| 🟩 [EDGE-phase0-bootstrap.md](EDGE-phase0-bootstrap.md) | Bootstrap connectivité | 🔴 Not started | 15 pt | 🔴 **Bloquant** | Semaine 1 — premier |
+| 🟦 [EDGE-firmware-esp32-s3.md](EDGE-firmware-esp32-s3.md) | Firmware ESP32-S3 edge | 🔴 Not started | 50-55 pt | 🔴 Critical | Semaine 1-2 — après Phase 0 |
+| 🟩 [SRV-stc-tts-server.md](SRV-stc-tts-server.md) | Server central | 🟡 In progress | 37-40 pt | 🔴 Critical | Semaine 1-2 |
+| 🟧 [ORCH-orchestrator-local-first.md](ORCH-orchestrator-local-first.md) | Orchestration | 🟡 In progress | 36-40 pt | 🟠 High | Semaine 1-2 |
+| 🟣 [DOM-home-assistant.md](DOM-home-assistant.md) | Domotique | 🔴 Not started | 21-24 pt | 🟠 High | Semaine 2+ |
+| 🔴 [OBS-observability.md](OBS-observability.md) | Cross-cutting | 🟡 In progress | 25-29 pt | 🟠 High | Semaine 1-2 |
 
 ---
 

@@ -2,9 +2,11 @@
 
 **Statut**: 🔴 Not Started  
 **Owner**: TBD  
-**Timeline**: Semaines 1-2 (Sprint 2w)  
+**Timeline**: Semaines 1-2 (Sprint 2w) — **débute après EDGE-phase0-bootstrap**  
 **Estimation**: 40 pt (3-4 jours)  
 **Priority**: 🔴 Critique (bloque SRV + ORCH)
+
+> ⚠️ **Prérequis**: [EDGE-phase0-bootstrap.md](EDGE-phase0-bootstrap.md) doit être terminé avant de démarrer cet epic (debug USB-C + WiFi + lien serveur validés).
 
 ---
 
@@ -21,6 +23,8 @@ Implémenter le firmware complet pour le satellite edge ESP32-S3:
 - Reconnexion automatique + exponential backoff
 
 **Justification**: Réduire latence/charge serveur, gestion critique local, robustesse sans serveur.
+
+**Point de depart repo**: une ossature firmware cible existe dans `src/base/firmware/esp32-s3/` avec projet `ESP-IDF` minimal, composant `assistant_edge`, et premier mapping de la state machine edge.
 
 ## Fonctionnalites accessibles avec la carte cible
 
@@ -75,13 +79,13 @@ Implémenter le firmware complet pour le satellite edge ESP32-S3:
 ### Phase 2: Wake Word Local (Jour 2)
 
 **EDGE-03**: Intégration wake word engine  
-- [ ] Choose: SmallWakeWord, pmdl_88, PocketSphinx
+- [ ] Choose: ESP-SR WakeNet en priorité, alternatives uniquement pour benchmark
 - [ ] Train/tune sur "Nova" + variations
 - [ ] Test batch 100x "Nova" → détection ≥ 99%
 - [ ] Latence <200 ms (P50)
 
 **EDGE-04**: VAD integration  
-- [ ] WebRTC VAD ou syllable-based VAD
+- [ ] ESP-SR VADNet / AFE en priorité
 - [ ] Config sensibilité (3 levels: sensitive/normal/loose)
 - [ ] Test: 0 false positives en 30 sec room noise
 
@@ -174,25 +178,23 @@ Implémenter le firmware complet pour le satellite edge ESP32-S3:
 ## 📝 Notes d'implémentation
 
 ### Audio Capture
-```cpp
-// Configuration I2S: 16 kHz, PCM, mono
-i2s_config_t i2s_config = {
-    .mode = I2S_MODE_MASTER | I2S_MODE_RX,
-    .sample_rate = 16000,
-    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-    .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count = 2,
-    .dma_buf_len = 1024,
-};
+```c
+/* Configuration SAI/I2S ESP32-S3 : 16 kHz, PCM, mono */
+SAI_HandleTypeDef hsai;
+hsai.Init.AudioFrequency   = SAI_AUDIO_FREQUENCY_16K;
+hsai.Init.DataSize         = SAI_DATASIZE_16;
+hsai.Init.MonoStereoMode   = SAI_MONOMODE;
+hsai.Init.AudioMode        = SAI_MODEMASTER_RX;
+hsai.Init.Protocol         = SAI_FREE_PROTOCOL;
+hsai.Init.FirstBit         = SAI_FIRSTBIT_MSB;
+/* DMA circulaire : 2 buffers x 1024 échantillons */
+HAL_SAI_Receive_DMA(&hsai, audio_buf, 1024);
 ```
 
 ### Wake Word Library Candidates
-- **PocketSphinx**: Lightweight (1 MB), offline, ok accuracy
-- **SmallWakeWord**: Ultralightweight, Android trained
-- **Edge Impulse**: Custom trained, good UX
-- **TinyML WaveNet**: Experimental, promising
+- **ESP-SR WakeNet**: cible prioritaire sur ESP32-S3 (Xtensa LX7), modele embarque
+- **Edge Impulse**: option de benchmark pour modele custom ESP32-S3
+- **TinyML custom**: option secondaire si ESP-SR WakeNet ne couvre pas le besoin produit
 
 ### Client HTTP Header
 ```http

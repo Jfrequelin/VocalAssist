@@ -13,7 +13,7 @@ Statut: baseline de conception
 
 ## 1. Resume executif
 
-AssistantVocal est un assistant vocal domestique de type Alexa-like avec intelligence principale centralisee sur un serveur local (Leon), et peripheriques edge economiques (ESP32-S3) pour l'interaction temps reel.
+AssistantVocal est un assistant vocal domestique de type Alexa-like avec intelligence principale centralisee sur un serveur local (Leon), et peripheriques edge économiques (ESP32-S3) pour l'interaction temps reel.
 
 Objectif principal:
 - Offrir une experience vocale fiable, locale-first, avec commandes basiques traitees en local edge et commandes complexes traitees par le serveur.

@@ -1,0 +1,45 @@
+[package]
+name = "assistant-edge"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+
+[[bin]]
+name = "assistant-edge"
+harness = false
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[dependencies]
+# Framework esp-idf en Rust (std, utilise ESP-IDF 5.x sous le capot)
+esp-idf-svc = { version = "0.52", features = ["std"] }
+esp-idf-hal  = { version = "0.46", features = ["std"] }
+esp-idf-sys  = { version = "0.37", features = ["std"] }
+
+# Traits standard embedded
+embedded-hal = "1"
+embedded-svc = "0.29"
+
+# Rendu graphique abstrait (texte, formes, images)
+embedded-graphics = "0.8"
+
+# Logging Rust → ESP-IDF log (visible sur USB-CDC)
+log = "0.4"
+
+# JSON pour la réponse /health
+serde      = { version = "1", default-features = false, features = ["derive"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+
+# Gestion des erreurs ergonomique
+anyhow = { version = "1", features = ["std"] }
+
+# Collections sans allocation dynamique (strings/vec taille fixe)
+heapless = "0.8"
+
+[build-dependencies]
+embuild = "0.33"

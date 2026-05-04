@@ -68,3 +68,5 @@ htmlcov/
 
 # Rust / Embedded build artifacts
 **/target/
+src/base/firmware/esp32-s3/sdkconfig
+src/base/firmware/esp32-s3/sdkconfig.local
