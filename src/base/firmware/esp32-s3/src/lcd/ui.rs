@@ -205,7 +205,6 @@ pub fn run_wifi_provisioning(
     const SSID_MAX_Y: u16 = 290;     // y≤290 → limite basse
     const SSID_ITEM_X: u16 = 45;
     const SSID_ITEM_W: u16 = 270;
-    const SCROLL_ZONE_H: u16 = 15;   // zone haut/bas pour scroll
 
     // Calculer le nombre d'items qui peuvent tenir
     let available_h = SSID_MAX_Y - SSID_ORIGIN_Y;
@@ -217,6 +216,14 @@ pub fn run_wifi_provisioning(
     let render_list = |lcd: &mut LcdDisplay, offset: usize| -> Result<()> {
         // Effacer la zone de liste
         lcd.fill_rect(SSID_ITEM_X, SSID_ORIGIN_Y, SSID_ITEM_W, SSID_MAX_Y - SSID_ORIGIN_Y, COLOR_BLACK)?;
+
+        // Bouton SCROLL UP (en haut)
+        if offset > 0 {
+            // Bouton bleu : (x=50, y=65, w=260, h=15)
+            lcd.fill_rect(50, 65, 260, 15, COLOR_BLUE)?;
+            // Flèche haut bien visible (grande, blanche)
+            draw_text_lg(lcd, "^", 160, 66, EG_WHITE)?;
+        }
 
         // Afficher les items visibles
         let mut display_count = 0;
@@ -238,14 +245,12 @@ pub fn run_wifi_provisioning(
             display_count += 1;
         }
 
-        // Afficher les indicateurs de scroll
-        if offset > 0 {
-            // Flèche haut (↑) — juste après le séparateur, plus visible
-            draw_text_lg(lcd, "^", 160, 84, EG_WHITE)?;
-        }
+        // Bouton SCROLL DOWN (en bas)
         if offset + max_visible_items < ssids.len() {
-            // Flèche bas (↓) — visible dans la zone basse
-            draw_text_lg(lcd, "v", 160, 282, EG_WHITE)?;
+            // Bouton bleu : (x=50, y=290, w=260, h=15)
+            lcd.fill_rect(50, 290, 260, 15, COLOR_BLUE)?;
+            // Flèche bas bien visible (grande, blanche)
+            draw_text_lg(lcd, "v", 160, 291, EG_WHITE)?;
         }
 
         Ok(())
@@ -257,16 +262,16 @@ pub fn run_wifi_provisioning(
     // --- Attente tap sur un SSID ---
     let selected_ssid = loop {
         if let Some(p) = lcd.read_touch() {
-            // Zone scroll up
-            if p.y < SCROLL_ZONE_H && scroll_offset > 0 {
+            // Zone scroll up (bouton bleu en haut : y=65..80)
+            if p.y >= 65 && p.y < 80 && scroll_offset > 0 {
                 scroll_offset -= 1;
                 render_list(lcd, scroll_offset)?;
                 FreeRtos::delay_ms(150);  // anti-rebond
                 continue;
             }
 
-            // Zone scroll down
-            if p.y > SSID_MAX_Y && scroll_offset + max_visible_items < ssids.len() {
+            // Zone scroll down (bouton bleu en bas : y=290..305)
+            if p.y >= 290 && p.y <= 305 && scroll_offset + max_visible_items < ssids.len() {
                 scroll_offset += 1;
                 render_list(lcd, scroll_offset)?;
                 FreeRtos::delay_ms(150);  // anti-rebond
