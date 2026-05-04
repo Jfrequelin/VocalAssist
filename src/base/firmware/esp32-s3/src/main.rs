@@ -53,10 +53,6 @@ fn main() -> Result<()> {
     CST816S::init();
     info!("[P0-01] CST816S touchscreen initialisé");
 
-    // DEBUG: Hold blue screen for 5 seconds to observe for artifacts
-    info!("[P0-01] Écran bleu affichant pendant 5 secondes...");
-    FreeRtos::delay_ms(5000);
-
     // ----------------------------------------------------------------
     // [P0-02] WiFi provisioning
     // ----------------------------------------------------------------

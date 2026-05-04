@@ -183,9 +183,6 @@ impl LcdDisplay {
         // 7. DISPON supplémentaire par sécurité
         lcd.send_cmd(0x29, &[])?;
 
-        // 8. Écran bleu pour valider
-        lcd.fill(COLOR_BLUE)?;
-
         info!("LCD ST77916 QSPI initialisé ({}×{})", LCD_W, LCD_H);
         Ok(lcd)
     }
