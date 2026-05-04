@@ -217,12 +217,15 @@ pub fn run_wifi_provisioning(
         // Effacer la zone de liste
         lcd.fill_rect(SSID_ITEM_X, SSID_ORIGIN_Y, SSID_ITEM_W, SSID_MAX_Y - SSID_ORIGIN_Y, COLOR_BLACK)?;
 
-        // Bouton SCROLL UP (en haut)
+        // Bouton SCROLL UP (en haut) - remplit les 20 premières lignes entièrement
         if offset > 0 {
-            // Bouton bleu : (x=50, y=65, w=260, h=15)
-            lcd.fill_rect(50, 65, 260, 15, COLOR_BLUE)?;
-            // Flèche haut bien visible (grande, blanche)
-            draw_text_lg(lcd, "^", 160, 66, EG_WHITE)?;
+            // Bouton bleu : largeur complète 360px, hauteur 20px
+            lcd.fill_rect(0, 0, 360, 20, COLOR_BLUE)?;
+            // Flèche haut bien visible (grande, blanche, centrée)
+            draw_text_lg(lcd, "^", 160, 2, EG_WHITE)?;
+        } else {
+            // Pas de scroll possible : remplir en noir
+            lcd.fill_rect(0, 0, 360, 20, COLOR_BLACK)?;
         }
 
         // Afficher les items visibles
@@ -245,12 +248,15 @@ pub fn run_wifi_provisioning(
             display_count += 1;
         }
 
-        // Bouton SCROLL DOWN (en bas)
+        // Bouton SCROLL DOWN (en bas) - remplit les 20 dernières lignes entièrement
         if offset + max_visible_items < ssids.len() {
-            // Bouton bleu : (x=50, y=290, w=260, h=15)
-            lcd.fill_rect(50, 290, 260, 15, COLOR_BLUE)?;
-            // Flèche bas bien visible (grande, blanche)
-            draw_text_lg(lcd, "v", 160, 291, EG_WHITE)?;
+            // Bouton bleu : largeur complète 360px, hauteur 20px, y=340..359
+            lcd.fill_rect(0, 340, 360, 20, COLOR_BLUE)?;
+            // Flèche bas bien visible (grande, blanche, centrée)
+            draw_text_lg(lcd, "v", 160, 342, EG_WHITE)?;
+        } else {
+            // Pas de scroll possible : remplir en noir
+            lcd.fill_rect(0, 340, 360, 20, COLOR_BLACK)?;
         }
 
         Ok(())
@@ -262,16 +268,16 @@ pub fn run_wifi_provisioning(
     // --- Attente tap sur un SSID ---
     let selected_ssid = loop {
         if let Some(p) = lcd.read_touch() {
-            // Zone scroll up (bouton bleu en haut : y=65..80)
-            if p.y >= 65 && p.y < 80 && scroll_offset > 0 {
+            // Zone scroll up (20 premières lignes : y < 20)
+            if p.y < 20 && scroll_offset > 0 {
                 scroll_offset -= 1;
                 render_list(lcd, scroll_offset)?;
                 FreeRtos::delay_ms(150);  // anti-rebond
                 continue;
             }
 
-            // Zone scroll down (bouton bleu en bas : y=290..305)
-            if p.y >= 290 && p.y <= 305 && scroll_offset + max_visible_items < ssids.len() {
+            // Zone scroll down (20 dernières lignes : y >= 340)
+            if p.y >= 340 && scroll_offset + max_visible_items < ssids.len() {
                 scroll_offset += 1;
                 render_list(lcd, scroll_offset)?;
                 FreeRtos::delay_ms(150);  // anti-rebond
