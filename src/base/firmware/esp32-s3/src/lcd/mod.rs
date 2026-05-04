@@ -19,6 +19,7 @@ use anyhow::Result;
 use esp_idf_hal::delay::FreeRtos;
 use esp_idf_sys::*;
 use log::{info, warn};
+use crate::touch::CST816S;
 
 pub const LCD_W: u16 = 360;
 pub const LCD_H: u16 = 360;
@@ -68,12 +69,8 @@ const TCA9554_REG_CONFIG: u8 = 0x03;
 // SPI2_HOST = 1
 const SPI_HOST_ID: spi_host_device_t = spi_host_device_t_SPI2_HOST;
 
-/// Résultat d'un toucher
-#[derive(Debug, Clone, Copy)]
-pub struct TouchPoint {
-    pub x: u16,
-    pub y: u16,
-}
+// Résultat d'un toucher
+pub use crate::touch::TouchPoint;
 
 /// Pilote LCD ST77916 QSPI 4-bit
 pub struct LcdDisplay {
@@ -419,11 +416,10 @@ impl LcdDisplay {
     }
 
     // ----------------------------------------------------------------
-    // Touch CST816S — stub (non implémenté encore)
+    // Touch CST816S
     // ----------------------------------------------------------------
     pub fn read_touch(&mut self) -> Option<TouchPoint> {
-        let _ = TP_INT;
-        None
+        CST816S::read_touch()
     }
 
     // ----------------------------------------------------------------
