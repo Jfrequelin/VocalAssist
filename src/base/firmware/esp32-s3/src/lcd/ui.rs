@@ -189,7 +189,7 @@ pub fn run_wifi_provisioning(
 ) -> Result<(heapless::String<32>, heapless::String<64>)> {
     use heapless::String as HString;
 
-    // --- Affichage liste SSIDs ---
+    // --- Affichage liste SSIDs avec scroll ---
     // Zone circulaire : x=50..310 (w=260) est sûre pour y=65..295
     lcd.fill(COLOR_BLACK)?;
     // Titre centré (y≈65 : chord ≈ 285 px)
@@ -201,29 +201,89 @@ pub fn run_wifi_provisioning(
 
     const SSID_ITEM_H: u16 = 30;
     const SSID_ITEM_GAP: u16 = 4;
-    const SSID_ORIGIN_Y: u16 = 90;  // y≥85 → chord ≈ 306 px, marges 27 px
+    const SSID_ORIGIN_Y: u16 = 90;  // y≥90 → zone d'affichage sûre
+    const SSID_MAX_Y: u16 = 290;     // y≤290 → limite basse
     const SSID_ITEM_X: u16 = 45;
     const SSID_ITEM_W: u16 = 270;
+    const SCROLL_ZONE_H: u16 = 15;   // zone haut/bas pour scroll
 
-    for (i, ssid) in ssids.iter().enumerate() {
-        let ry = SSID_ORIGIN_Y + i as u16 * (SSID_ITEM_H + SSID_ITEM_GAP);
-        lcd.fill_rect(SSID_ITEM_X, ry, SSID_ITEM_W, SSID_ITEM_H - 2, COLOR_GRAY)?;
-        let text_y = ry as i32 + 18;
-        draw_text(lcd, ssid, SSID_ITEM_X as i32 + 10, text_y)?;
-        info!("  SSID[{}]: {}", i, ssid);
-    }
+    // Calculer le nombre d'items qui peuvent tenir
+    let available_h = SSID_MAX_Y - SSID_ORIGIN_Y;
+    let max_visible_items = (available_h / (SSID_ITEM_H + SSID_ITEM_GAP)) as usize;
+
+    let mut scroll_offset: usize = 0;
+
+    // Fonction pour redessiner la liste
+    let render_list = |lcd: &mut LcdDisplay, offset: usize| -> Result<()> {
+        // Effacer la zone de liste
+        lcd.fill_rect(SSID_ITEM_X, SSID_ORIGIN_Y, SSID_ITEM_W, SSID_MAX_Y - SSID_ORIGIN_Y, COLOR_BLACK)?;
+
+        // Afficher les items visibles
+        let mut display_count = 0;
+        for (i, ssid) in ssids.iter().enumerate() {
+            if i < offset {
+                continue;  // Skip les items au-dessus du scroll
+            }
+            if display_count >= max_visible_items {
+                break;  // Stop si on dépasse la zone visible
+            }
+
+            let ry = SSID_ORIGIN_Y + display_count as u16 * (SSID_ITEM_H + SSID_ITEM_GAP);
+            lcd.fill_rect(SSID_ITEM_X, ry, SSID_ITEM_W, SSID_ITEM_H - 2, COLOR_GRAY)?;
+            let text_y = ry as i32 + 18;
+            draw_text(lcd, ssid, SSID_ITEM_X as i32 + 10, text_y)?;
+            let item_num = i + 1;  // 1-indexed
+            info!("  SSID[{}]: {}", item_num, ssid);
+
+            display_count += 1;
+        }
+
+        // Afficher les indicateurs de scroll
+        if offset > 0 {
+            // Flèche haut (↑)
+            draw_text(lcd, "^", 175, 78)?;
+        }
+        if offset + max_visible_items < ssids.len() {
+            // Flèche bas (↓)
+            draw_text(lcd, "v", 175, 295)?;
+        }
+
+        Ok(())
+    };
+
+    // Afficher la liste initiale
+    render_list(lcd, scroll_offset)?;
 
     // --- Attente tap sur un SSID ---
     let selected_ssid = loop {
         if let Some(p) = lcd.read_touch() {
-            if p.y >= SSID_ORIGIN_Y && p.x >= SSID_ITEM_X && p.x < SSID_ITEM_X + SSID_ITEM_W {
-                let idx = ((p.y - SSID_ORIGIN_Y) / (SSID_ITEM_H + SSID_ITEM_GAP)) as usize;
-                if idx < ssids.len() {
-                    let ry = SSID_ORIGIN_Y + idx as u16 * (SSID_ITEM_H + SSID_ITEM_GAP);
+            // Zone scroll up
+            if p.y < SCROLL_ZONE_H && scroll_offset > 0 {
+                scroll_offset -= 1;
+                render_list(lcd, scroll_offset)?;
+                FreeRtos::delay_ms(150);  // anti-rebond
+                continue;
+            }
+
+            // Zone scroll down
+            if p.y > SSID_MAX_Y && scroll_offset + max_visible_items < ssids.len() {
+                scroll_offset += 1;
+                render_list(lcd, scroll_offset)?;
+                FreeRtos::delay_ms(150);  // anti-rebond
+                continue;
+            }
+
+            // Zone de sélection SSID
+            if p.y >= SSID_ORIGIN_Y && p.y <= SSID_MAX_Y && p.x >= SSID_ITEM_X && p.x < SSID_ITEM_X + SSID_ITEM_W {
+                let idx_in_view = ((p.y - SSID_ORIGIN_Y) / (SSID_ITEM_H + SSID_ITEM_GAP)) as usize;
+                let global_idx = scroll_offset + idx_in_view;
+
+                if global_idx < ssids.len() {
+                    let ry = SSID_ORIGIN_Y + idx_in_view as u16 * (SSID_ITEM_H + SSID_ITEM_GAP);
                     lcd.fill_rect(SSID_ITEM_X, ry, SSID_ITEM_W, SSID_ITEM_H - 2, COLOR_GREEN)?;
                     FreeRtos::delay_ms(300);
-                    info!("UI: SSID sélectionné: {}", ssids[idx]);
-                    break ssids[idx];
+                    info!("UI: SSID sélectionné: {} (index {})", ssids[global_idx], global_idx);
+                    break ssids[global_idx];
                 }
             }
         }
