@@ -15,11 +15,13 @@ mod ui;
 mod wifi;
 mod server;
 mod touch;
+mod audio;
 
 use lcd::LcdDisplay;
 use wifi::WifiManager;
 use server::ServerPing;
 use touch::CST816S;
+use audio::{audio_init, MicCapture};
 
 const BOOT_BUTTON_GPIO: i32 = 0;
 const LONG_PRESS_RESET_MS: u32 = 3_000;
@@ -95,6 +97,13 @@ fn main() -> Result<()> {
     // Init touchscreen CST816S (I2C0 déjà configuré par LcdDisplay::new)
     CST816S::init();
     info!("[P0-01] CST816S touchscreen initialisé");
+
+    // Init audio (ES7210 microphone + ES8311 DAC + PA GPIO)
+    // I2C0 est déjà configuré par LcdDisplay::new — on réutilise le même bus.
+    match audio_init() {
+        Ok(()) => info!("[P0-01] Codecs audio ES7210+ES8311 initialisés"),
+        Err(e) => log::warn!("[P0-01] Init audio échouée (non bloquant): {}", e),
+    }
 
     // ----------------------------------------------------------------
     // [P0-02] WiFi provisioning
@@ -190,6 +199,19 @@ fn main() -> Result<()> {
 
     info!("=== Phase 0 complète — boucle READY ===");
 
+    // ── Phase 1.2 : Initialisation driver I2S microphone ────────────────────
+    // Créé une seule fois, réutilisé à chaque cycle READY.
+    let mut mic_opt: Option<MicCapture> = match MicCapture::new(
+        peripherals.i2s0,
+        peripherals.pins.gpio48,  // BCK
+        peripherals.pins.gpio38,  // WS / LRCK
+        peripherals.pins.gpio39,  // DIN  (ES7210 → ESP32)
+        peripherals.pins.gpio2,   // MCLK
+    ) {
+        Ok(m)  => { info!("[P1.2] MicCapture initialisé"); Some(m) }
+        Err(e) => { log::warn!("[P1.2] MicCapture échoué: {} — capture désactivée", e); None }
+    };
+
     loop {
         // Factory reset toujours surveillé (appui long BOOT)
         maybe_factory_reset(&mut wifi, nvs_partition.clone())?;
@@ -197,9 +219,51 @@ fn main() -> Result<()> {
         match ui::run_ready_loop(&mut lcd, wifi.is_connected(), ping.ok)? {
             ui::ReadyAction::StartListening => {
                 info!("[READY] Tap micro → démarrage écoute");
-                // TODO Phase 1.2 : démarrer capture I2S microphone ici
-                // L'écran montre déjà "EN ECOUTE" pendant 150 ms (flash dans run_ready_loop)
-                // puis retourne automatiquement à l'état IDLE.
+
+                // ── Phase 1.2 : Capture audio I2S ───────────────────────
+                // run_ready_loop a déjà dessiné l'état Listening.
+                let pcm_mono = if let Some(ref mut mic) = mic_opt {
+                    mic.capture().unwrap_or_else(|e| {
+                        log::warn!("[READY] Capture échouée: {}", e);
+                        Vec::new()
+                    })
+                } else {
+                    FreeRtos::delay_ms(3_000);  // stub si pas de mic
+                    Vec::new()
+                };
+
+                // ── Phase 1.3 : POST /edge/audio ─────────────────────────
+                ui::update_ready_state(&mut lcd, ui::DeviceState::Thinking)?;
+
+                let audio_answer = if !pcm_mono.is_empty() {
+                    match server.post_audio(&pcm_mono) {
+                        Ok(resp) => {
+                            info!("[READY] Réponse serveur: intent={} answer={}",
+                                resp.intent, resp.answer);
+                            resp.answer
+                        }
+                        Err(e) => {
+                            log::warn!("[READY] POST /edge/audio échoué: {}", e);
+                            let mut s = heapless::String::<256>::new();
+                            let _ = s.push_str("Erreur serveur");
+                            s
+                        }
+                    }
+                } else {
+                    // Pas de données audio — pas d'envoi
+                    let mut s = heapless::String::<256>::new();
+                    let _ = s.push_str("Pas d'audio capturé");
+                    s
+                };
+
+                // ── Phase 1.4 : Affichage réponse + état PARLE ───────────
+                ui::update_ready_state(&mut lcd, ui::DeviceState::Speaking)?;
+                info!("[READY] Réponse: {}", audio_answer);
+                // Pause courte pour afficher l'état PARLE (TTS I2S à implémenter Phase 1.5)
+                FreeRtos::delay_ms(2_500);
+
+                // Retour Idle → prochain tour de boucle
+                info!("[READY] Cycle terminé → retour Idle");
             }
         }
     }

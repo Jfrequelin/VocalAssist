@@ -24,6 +24,7 @@ esp-idf-sys  = { version = "0.37", features = ["std"] }
 # Traits standard embedded
 embedded-hal = "1"
 embedded-svc = "0.29"
+embedded-io  = "0.7"
 
 # Rendu graphique abstrait (texte, formes, images)
 embedded-graphics = "0.8"

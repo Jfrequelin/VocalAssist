@@ -9,6 +9,7 @@ use esp_idf_svc::{
 };
 use embedded_svc::http::client::Client as HttpClient;
 use embedded_svc::http::Method;
+use embedded_io::Write as _;
 use heapless::String as HString;
 use log::{info, warn};
 
@@ -21,6 +22,16 @@ const DEFAULT_HOST:         &str = "192.168.1.100";
 const DEFAULT_PORT:         u16  = 8080;
 const TIMEOUT_MS:           u32  = 5_000;
 const RESPONSE_BUF_SIZE:    usize = 256;
+const AUDIO_RESP_BUF_SIZE:  usize = 2048;
+
+/// Réponse du serveur à un POST /edge/audio
+#[derive(Debug, Clone)]
+pub struct AudioResponse {
+    /// Texte réponse (TTS ou affiché à l'écran)
+    pub answer: HString<256>,
+    /// Intent détecté
+    pub intent: HString<64>,
+}
 
 #[derive(Debug, Clone)]
 pub struct PingResult {
@@ -159,6 +170,100 @@ impl ServerPing {
         let _ = result.push_str(&s[..s.len().min(RESPONSE_BUF_SIZE)]);
         Ok(result)
     }
+
+    // ----------------------------------------------------------------
+    // POST /edge/audio
+    // ----------------------------------------------------------------
+
+    /// Envoie les bytes PCM mono 16 bits 16 kHz vers POST /edge/audio.
+    ///
+    /// Construit le payload JSON conforme au contrat EdgeAudioRequest v2 :
+    /// ```json
+    /// {
+    ///   "device_id": "edge-001",
+    ///   "correlation_id": "<timestamp>",
+    ///   "timestamp_ms": <u64>,
+    ///   "sample_rate_hz": 16000,
+    ///   "channels": 1,
+    ///   "encoding": "pcm16le",
+    ///   "audio_base64": "<base64>"
+    /// }
+    /// ```
+    pub fn post_audio(&mut self, pcm_mono: &[u8]) -> Result<AudioResponse> {
+        use crate::audio::base64_encode;
+
+        let url = format!("http://{}:{}/edge/audio", self.host, self.port);
+        let ts_ms = unsafe { esp_idf_svc::sys::esp_timer_get_time() } / 1000;
+        let cid   = format!("edge-{}", ts_ms);
+
+        let audio_b64 = base64_encode(pcm_mono);
+        info!(
+            "[SERVER] POST /edge/audio — {} bytes PCM → {} chars B64",
+            pcm_mono.len(),
+            audio_b64.len()
+        );
+
+        // Construire le JSON manuellement (serde_json en alloc mode)
+        let body = format!(
+            r#"{{"device_id":"edge-001","correlation_id":"{cid}","timestamp_ms":{ts_ms},"sample_rate_hz":16000,"channels":1,"encoding":"pcm16le","audio_base64":"{audio_b64}"}}"#
+        );
+
+        let cfg = HttpConfig {
+            timeout: Some(core::time::Duration::from_millis(15_000)),
+            ..Default::default()
+        };
+        let conn = EspHttpConnection::new(&cfg)?;
+        let mut client = HttpClient::wrap(conn);
+
+        let headers: &[(&str, &str)] = &[("content-type", "application/json")];
+        let request  = client.request(Method::Post, &url, headers)?;
+        let mut request = request;
+        request.write_all(body.as_bytes())?;
+        request.flush()?;
+        let mut resp = request.submit()?;
+
+        let status = resp.status();
+        info!("[SERVER] Réponse HTTP {}", status);
+        if status != 200 && status != 202 {
+            bail!("[SERVER] HTTP {} depuis /edge/audio", status);
+        }
+
+        // Lire la réponse (jusqu'à AUDIO_RESP_BUF_SIZE)
+        let mut buf = [0u8; AUDIO_RESP_BUF_SIZE];
+        let n = resp.read(&mut buf).unwrap_or(0);
+        let body_str = core::str::from_utf8(&buf[..n]).unwrap_or("");
+        info!("[SERVER] Réponse body: {}", &body_str[..body_str.len().min(120)]);
+
+        Ok(parse_audio_response(body_str))
+    }
+}
+
+
+/// Extraction naïve de "answer" et "intent" depuis la réponse /edge/audio.
+fn parse_audio_response(body: &str) -> AudioResponse {
+    AudioResponse {
+        answer: extract_field(body, "answer"),
+        intent: extract_field(body, "intent"),
+    }
+}
+
+/// Extrait la valeur d'un champ JSON string de manière naïve (sans dépendance serde).
+fn extract_field<const N: usize>(body: &str, key: &str) -> HString<N> {
+    let mut result: HString<N> = HString::new();
+    let needle = format!("\"{}\"", key);
+    if let Some(pos) = body.find(&needle) {
+        let after = &body[pos + needle.len()..];
+        if let Some(colon) = after.find(':') {
+            let val = after[colon + 1..].trim_start();
+            if val.starts_with('"') {
+                let inner = &val[1..];
+                if let Some(end) = inner.find('"') {
+                    let _ = result.push_str(&inner[..end.min(N - 1)]);
+                }
+            }
+        }
+    }
+    result
 }
 
 /// Extraction naïve de "version" depuis {"status":"ok","version":"x.y.z"}
