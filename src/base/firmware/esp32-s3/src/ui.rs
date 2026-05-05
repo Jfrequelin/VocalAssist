@@ -12,6 +12,7 @@ use embedded_graphics::{
     mono_font::{ascii::{FONT_9X15, FONT_10X20}, MonoTextStyle},
     pixelcolor::Rgb565,
     prelude::*,
+    primitives::{Circle, PrimitiveStyleBuilder},
     text::Text,
 };
 
@@ -22,6 +23,8 @@ const EG_BLUE:   Rgb565 = Rgb565::new(0, 0, 31);
 const EG_GREEN:  Rgb565 = Rgb565::new(0, 63, 0);
 const EG_RED:    Rgb565 = Rgb565::new(31, 0, 0);
 const EG_ORANGE: Rgb565 = Rgb565::new(31, 41, 0);
+const EG_CYAN:   Rgb565 = Rgb565::new(0, 50, 31);
+const EG_GRAY:   Rgb565 = Rgb565::new(12, 24, 12);
 
 /// Affiche une ligne de texte (police 9×15).
 fn draw_text(lcd: &mut LcdDisplay, text: &str, x: i32, y: i32) -> Result<()> {
@@ -823,5 +826,131 @@ pub fn run_wifi_provisioning(
     };
 
     return Ok((selected, confirmed_password));
+    }
+}
+
+// ================================================================
+// Écran READY — Phase 1
+// ================================================================
+
+/// État de l'appareil affiché sur l'écran READY.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DeviceState {
+    Idle,
+    Listening,
+    Thinking,
+    Speaking,
+    Error,
+}
+
+/// Action retournée par [`run_ready_loop`].
+pub enum ReadyAction {
+    StartListening,
+}
+
+// --- Géométrie ---
+const READY_CENTER_X:  i32 = 180;
+const READY_CENTER_Y:  i32 = 170;
+const READY_RADIUS:    u32 = 78;
+const READY_LABEL_Y:   i32 = 272;
+const READY_HINT_Y:    i32 = 308;
+
+fn state_eg_color(state: DeviceState) -> Rgb565 {
+    match state {
+        DeviceState::Idle      => EG_BLUE,
+        DeviceState::Listening => EG_GREEN,
+        DeviceState::Thinking  => EG_ORANGE,
+        DeviceState::Speaking  => EG_CYAN,
+        DeviceState::Error     => EG_RED,
+    }
+}
+
+/// Retourne (texte, x centré) pour FONT_10X20 (10 px/char).
+fn state_label(state: DeviceState) -> (&'static str, i32) {
+    match state {
+        DeviceState::Idle      => ("PRET",      160),
+        DeviceState::Listening => ("EN ECOUTE", 115),
+        DeviceState::Thinking  => ("REFLEXION", 115),
+        DeviceState::Speaking  => ("PARLE",     155),
+        DeviceState::Error     => ("ERREUR",    150),
+    }
+}
+
+/// Dessine (ou rafraîchit partiellement) le disque coloré + texte d'état.
+fn draw_state_indicator(lcd: &mut LcdDisplay, state: DeviceState) -> Result<()> {
+    let d   = READY_RADIUS * 2;
+    let tlx = READY_CENTER_X - READY_RADIUS as i32;
+    let tly = READY_CENTER_Y - READY_RADIUS as i32;
+
+    // Effacer zones (disque + label)
+    lcd.fill_rect(tlx as u16, tly as u16, d as u16, d as u16, COLOR_BLACK)?;
+    lcd.fill_rect(0, (READY_LABEL_Y - 16) as u16, LCD_W, 22, COLOR_BLACK)?;
+
+    // Disque coloré (embedded-graphics Circle)
+    let style = PrimitiveStyleBuilder::new()
+        .fill_color(state_eg_color(state))
+        .build();
+    Circle::new(Point::new(tlx, tly), d)
+        .into_styled(style)
+        .draw(lcd)?;
+
+    // Texte d'état centré sous le disque
+    let (label, lx) = state_label(state);
+    draw_text_lg(lcd, label, lx, READY_LABEL_Y, EG_WHITE)?;
+
+    Ok(())
+}
+
+/// Barre de statut haut (WiFi + Serveur).
+fn draw_ready_status_bar(lcd: &mut LcdDisplay, wifi_ok: bool, server_ok: bool) -> Result<()> {
+    lcd.fill_rect(0, 0, LCD_W, 30, COLOR_BLACK)?;
+    let wc = if wifi_ok  { EG_GREEN } else { EG_RED };
+    let sc = if server_ok { EG_GREEN } else { EG_RED };
+    draw_text_color(lcd, if wifi_ok  { "WiFi OK" } else { "WiFi KO" }, 10,  20, wc)?;
+    draw_text_color(lcd, if server_ok { "Srv OK" } else { "Srv KO"  }, 272, 20, sc)?;
+    Ok(())
+}
+
+/// Rendu complet de l'écran READY.
+pub fn draw_ready_screen(
+    lcd: &mut LcdDisplay,
+    state: DeviceState,
+    wifi_ok: bool,
+    server_ok: bool,
+) -> Result<()> {
+    lcd.fill_rect(0, 0, LCD_W, LCD_H, COLOR_BLACK)?;
+    draw_ready_status_bar(lcd, wifi_ok, server_ok)?;
+    draw_state_indicator(lcd, state)?;
+    draw_text_color(lcd, "Appuyer pour parler", 52, READY_HINT_Y, EG_GRAY)?;
+    Ok(())
+}
+
+/// Met à jour uniquement l'indicateur d'état (redraw partiel, sans effacer tout l'écran).
+pub fn update_ready_state(lcd: &mut LcdDisplay, state: DeviceState) -> Result<()> {
+    draw_state_indicator(lcd, state)
+}
+
+/// Boucle principale écran READY.
+///
+/// Affiche l'état `Idle` et attend un tap sur le disque central.
+/// Retourne [`ReadyAction::StartListening`] quand l'utilisateur tape.
+pub fn run_ready_loop(
+    lcd: &mut LcdDisplay,
+    wifi_ok: bool,
+    server_ok: bool,
+) -> Result<ReadyAction> {
+    draw_ready_screen(lcd, DeviceState::Idle, wifi_ok, server_ok)?;
+    loop {
+        if let Some(p) = lcd.read_touch() {
+            let dx = p.x as i32 - READY_CENTER_X;
+            let dy = p.y as i32 - READY_CENTER_Y;
+            let r  = READY_RADIUS as i32 + 20; // marge de tap
+            if dx * dx + dy * dy <= r * r {
+                update_ready_state(lcd, DeviceState::Listening)?;
+                FreeRtos::delay_ms(150);
+                return Ok(ReadyAction::StartListening);
+            }
+        }
+        FreeRtos::delay_ms(50);
     }
 }

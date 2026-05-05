@@ -23,8 +23,7 @@ use touch::CST816S;
 
 const BOOT_BUTTON_GPIO: i32 = 0;
 const LONG_PRESS_RESET_MS: u32 = 3_000;
-const LONG_PRESS_POLL_MS: u32 = 50;
-const BOOT_RESET_CHECK_INTERVAL_MS: u32 = 200;
+const LONG_PRESS_POLL_MS:  u32 = 50;
 
 fn is_boot_button_long_pressed() -> bool {
     unsafe {
@@ -186,25 +185,22 @@ fn main() -> Result<()> {
     }
 
     // ----------------------------------------------------------------
-    // État READY — Phase 0 terminée
+    // Phase 1 — Boucle READY (idle → listening → …)
     // ----------------------------------------------------------------
 
-    info!("=== Phase 0 terminée — état READY ===");
-    info!("Prochain: Phase 1 pipeline vocal (wake word, VAD, TTS)");
+    info!("=== Phase 0 complète — boucle READY ===");
 
-    // Boucle principale — heartbeat + surveillance appui long BOOT
-    let mut elapsed_heartbeat_ms: u32 = 0;
     loop {
+        // Factory reset toujours surveillé (appui long BOOT)
         maybe_factory_reset(&mut wifi, nvs_partition.clone())?;
 
-        FreeRtos::delay_ms(BOOT_RESET_CHECK_INTERVAL_MS);
-        elapsed_heartbeat_ms += BOOT_RESET_CHECK_INTERVAL_MS;
-
-        if elapsed_heartbeat_ms >= 30_000 {
-            elapsed_heartbeat_ms = 0;
-            info!("[HEARTBEAT] WiFi: {} | Serveur: {}",
-                  if wifi.is_connected() { "OK" } else { "KO" },
-                  if ping.ok { "OK" } else { "KO" });
+        match ui::run_ready_loop(&mut lcd, wifi.is_connected(), ping.ok)? {
+            ui::ReadyAction::StartListening => {
+                info!("[READY] Tap micro → démarrage écoute");
+                // TODO Phase 1.2 : démarrer capture I2S microphone ici
+                // L'écran montre déjà "EN ECOUTE" pendant 150 ms (flash dans run_ready_loop)
+                // puis retourne automatiquement à l'état IDLE.
+            }
         }
     }
 }
