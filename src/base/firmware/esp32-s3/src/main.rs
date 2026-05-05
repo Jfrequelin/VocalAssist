@@ -21,12 +21,6 @@ use wifi::WifiManager;
 use server::ServerPing;
 use touch::CST816S;
 
-// Adresse serveur par défaut — remplacée par NVS si déjà configurée
-#[allow(dead_code)]
-const DEFAULT_SERVER_HOST: &str = "192.168.1.100";
-#[allow(dead_code)]
-const DEFAULT_SERVER_PORT: u16  = 8080;
-
 const BOOT_BUTTON_GPIO: i32 = 0;
 const LONG_PRESS_RESET_MS: u32 = 3_000;
 const LONG_PRESS_POLL_MS: u32 = 50;
@@ -157,14 +151,30 @@ fn main() -> Result<()> {
     }
 
     // ----------------------------------------------------------------
-    // [P0-03] Ping serveur GET /health
+    // [P0-03] Configuration + ping serveur GET /health
     // ----------------------------------------------------------------
 
-    info!("[P0-03] Test lien serveur...");
+    info!("[P0-03] Configuration serveur...");
     let mut server = ServerPing::new(nvs_partition.clone())?;
 
-    // Utiliser l'adresse par défaut si rien en NVS
-    // (server::ServerPing::new gère déjà le fallback)
+    // Écran de configuration : IP + port + test connexion
+    {
+        // Extraire host/port avant d'emprunter server en mutable dans la closure
+        let cur_host: heapless::String<64> = {
+            let mut s = heapless::String::new();
+            for c in server.host().chars() { let _ = s.push(c); }
+            s
+        };
+        let cur_port = server.port();
+        let (srv_host, srv_port) = ui::run_server_config(
+            &mut lcd,
+            cur_host.as_str(),
+            cur_port,
+            &mut |host, port| server.ping_address(host, port),
+        )?;
+        server.set_address(srv_host.as_str(), srv_port)?;
+        info!("[P0-03] Adresse serveur configurée: {}:{}", srv_host, srv_port);
+    }
 
     let ping = server.ping();
     if ping.ok {
@@ -172,7 +182,7 @@ fn main() -> Result<()> {
         info!("[P0-03] Serveur OK ✓ — v{} {}ms", ping.version, ping.latency_ms);
     } else {
         ui::show_server_unreachable(&mut lcd)?;
-        error!("[P0-03] Serveur injoignable ✗ — vérifier l'adresse et le réseau");
+        error!("[P0-03] Serveur injoignable ✗");
     }
 
     // ----------------------------------------------------------------

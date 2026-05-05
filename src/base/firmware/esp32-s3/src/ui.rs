@@ -383,6 +383,243 @@ pub fn show_server_unreachable(lcd: &mut LcdDisplay) -> Result<()> {
     Ok(())
 }
 
+// ----------------------------------------------------------------
+// Écran : configuration du serveur (IP + port + test connexion)
+// ----------------------------------------------------------------
+
+// Layout (y=0..132 au-dessus du clavier) :
+//  y=0..32   : bannière bleue "Config Serveur"
+//  y=35..57  : champ IP    (fond bleu foncé = actif, gris foncé = inactif)
+//  y=61..83  : champ Port
+//  y=87..115 : boutons [TEST CONNECT] [OK/SAUVER]
+//  y=118..130: ligne résultat du test
+//  y=132+    : clavier tactile
+
+const SRV_IP_Y:       u16 = 35;
+const SRV_IP_H:       u16 = 22;
+const SRV_PORT_Y:     u16 = 61;
+const SRV_PORT_H:     u16 = 22;
+const SRV_BTN_Y:      u16 = 87;
+const SRV_BTN_H:      u16 = 28;
+const SRV_BTN_TEST_X: u16 = 20;
+const SRV_BTN_OK_X:   u16 = 190;
+const SRV_BTN_W:      u16 = 150;
+const SRV_STATUS_Y:   u16 = 128;   // baseline texte status
+const SRV_FIELD_X:    u16 = 10;
+const SRV_FIELD_W:    u16 = 340;
+
+// Bleu foncé RGB565 (~0,0,10) pour champ actif
+const COLOR_FIELD_ACTIVE:   u16 = 0x000A;
+// Gris très foncé RGB565 pour champ inactif
+const COLOR_FIELD_INACTIVE: u16 = 0x1082;
+// Vert foncé RGB565 pour bouton OK
+const COLOR_BTN_OK:         u16 = 0x0320;
+// Rouge RGB565 pour erreur
+const COLOR_RED_U16:        u16 = 0xF800;
+
+#[derive(Clone, Copy, PartialEq)]
+enum SrvField { Ip, Port }
+
+fn draw_server_field(
+    lcd: &mut LcdDisplay,
+    y: u16, h: u16,
+    label: &str, value: &str,
+    active: bool,
+) -> Result<()> {
+    let bg = if active { COLOR_FIELD_ACTIVE } else { COLOR_FIELD_INACTIVE };
+    lcd.fill_rect(SRV_FIELD_X, y, SRV_FIELD_W, h, bg)?;
+    let mut line = heapless::String::<72>::new();
+    let _ = line.push_str(label);
+    for c in value.chars().take(60) { let _ = line.push(c); }
+    if active { let _ = line.push('_'); }   // curseur
+    draw_text_color(lcd, line.as_str(), SRV_FIELD_X as i32 + 4, y as i32 + 16, EG_WHITE)?;
+    Ok(())
+}
+
+fn draw_server_screen_full(
+    lcd: &mut LcdDisplay,
+    ip: &str, port: &str,
+    active: SrvField,
+) -> Result<()> {
+    lcd.fill_rect(0, 0, LCD_W, KB_ORIGIN_Y, COLOR_BLACK)?;
+    lcd.draw_banner(0, 32, COLOR_BLUE)?;
+    // "Config Serveur" = 14 chars × 10px = 140px → x=(360-140)/2=110
+    draw_text_lg(lcd, "Config Serveur", 110, 24, EG_WHITE)?;
+
+    draw_server_field(lcd, SRV_IP_Y, SRV_IP_H, "IP: ", ip, active == SrvField::Ip)?;
+    draw_server_field(lcd, SRV_PORT_Y, SRV_PORT_H, "Port: ", port, active == SrvField::Port)?;
+
+    // Bouton TEST
+    lcd.fill_rect(SRV_BTN_TEST_X, SRV_BTN_Y, SRV_BTN_W, SRV_BTN_H, COLOR_BLUE)?;
+    draw_text_color(lcd, "TEST CONNECT", SRV_BTN_TEST_X as i32 + 10, SRV_BTN_Y as i32 + 20, EG_WHITE)?;
+
+    // Bouton OK
+    lcd.fill_rect(SRV_BTN_OK_X, SRV_BTN_Y, SRV_BTN_W, SRV_BTN_H, COLOR_BTN_OK)?;
+    draw_text_color(lcd, "OK / SAUVER", SRV_BTN_OK_X as i32 + 12, SRV_BTN_Y as i32 + 20, EG_WHITE)?;
+
+    Ok(())
+}
+
+fn draw_server_status(lcd: &mut LcdDisplay, status: Option<bool>) -> Result<()> {
+    lcd.fill_rect(0, SRV_STATUS_Y - 14, LCD_W, 16, COLOR_BLACK)?;
+    match status {
+        Some(true)  => draw_text_color(lcd, "Serveur joignable OK !", 65, SRV_STATUS_Y as i32, EG_GREEN)?,
+        Some(false) => draw_text_color(lcd, "Injoignable !", 105, SRV_STATUS_Y as i32, EG_RED)?,
+        None        => {}
+    }
+    Ok(())
+}
+
+/// Écran de configuration du serveur.
+///
+/// Affiche les champs IP et Port (pré-remplis depuis `current_host`/`current_port`),
+/// un bouton TEST pour tester la connexion, et un bouton OK pour confirmer.
+/// `test_fn` reçoit (host, port) et retourne `true` si le serveur répond.
+///
+/// Retourne `(host, port)` validés par l'utilisateur.
+pub fn run_server_config<F>(
+    lcd: &mut LcdDisplay,
+    current_host: &str,
+    current_port: u16,
+    test_fn: &mut F,
+) -> Result<(heapless::String<64>, u16)>
+where
+    F: FnMut(&str, u16) -> bool,
+{
+    let mut ip: heapless::String<64> = heapless::String::new();
+    for c in current_host.chars().take(63) { let _ = ip.push(c); }
+
+    // Convertit le port en chaîne
+    let port_num = current_port;
+    let mut port_str: heapless::String<8> = heapless::String::new();
+    let digits = format_u32(port_num as u32);
+    for b in digits.iter() { let _ = port_str.push(*b as char); }
+
+    let mut active = SrvField::Ip;
+    let mut kb_mode = KeyboardMode::Numbers;
+    let mut status: Option<bool> = None;
+
+    draw_server_screen_full(lcd, ip.as_str(), port_str.as_str(), active)?;
+    keyboard_draw(lcd, kb_mode)?;
+
+    loop {
+        if let Some(p) = lcd.read_touch() {
+            // --- Changement de champ actif ---
+            if p.y >= SRV_IP_Y && p.y < SRV_IP_Y + SRV_IP_H && p.x >= SRV_FIELD_X && p.x < SRV_FIELD_X + SRV_FIELD_W {
+                if active != SrvField::Ip {
+                    active = SrvField::Ip;
+                    draw_server_field(lcd, SRV_IP_Y, SRV_IP_H, "IP: ", ip.as_str(), true)?;
+                    draw_server_field(lcd, SRV_PORT_Y, SRV_PORT_H, "Port: ", port_str.as_str(), false)?;
+                    FreeRtos::delay_ms(150);
+                    continue;
+                }
+            }
+            if p.y >= SRV_PORT_Y && p.y < SRV_PORT_Y + SRV_PORT_H && p.x >= SRV_FIELD_X && p.x < SRV_FIELD_X + SRV_FIELD_W {
+                if active != SrvField::Port {
+                    active = SrvField::Port;
+                    draw_server_field(lcd, SRV_IP_Y, SRV_IP_H, "IP: ", ip.as_str(), false)?;
+                    draw_server_field(lcd, SRV_PORT_Y, SRV_PORT_H, "Port: ", port_str.as_str(), true)?;
+                    FreeRtos::delay_ms(150);
+                    continue;
+                }
+            }
+
+            // --- Bouton TEST ---
+            if p.x >= SRV_BTN_TEST_X && p.x < SRV_BTN_TEST_X + SRV_BTN_W
+                && p.y >= SRV_BTN_Y && p.y < SRV_BTN_Y + SRV_BTN_H
+            {
+                let port_val: u16 = parse_port(port_str.as_str());
+                // "Test en cours..."
+                lcd.fill_rect(0, SRV_STATUS_Y - 14, LCD_W, 16, COLOR_BLACK)?;
+                draw_text_color(lcd, "Test en cours...", 80, SRV_STATUS_Y as i32, EG_WHITE)?;
+                let ok = test_fn(ip.as_str(), port_val);
+                status = Some(ok);
+                draw_server_status(lcd, status)?;
+                FreeRtos::delay_ms(150);
+                continue;
+            }
+
+            // --- Bouton OK ---
+            if p.x >= SRV_BTN_OK_X && p.x < SRV_BTN_OK_X + SRV_BTN_W
+                && p.y >= SRV_BTN_Y && p.y < SRV_BTN_Y + SRV_BTN_H
+            {
+                let port_val: u16 = parse_port(port_str.as_str());
+                FreeRtos::delay_ms(150);
+                return Ok((ip, port_val));
+            }
+
+            // --- Clavier ---
+            match keyboard_flash_pressed(lcd, p, kb_mode)? {
+                KeyPress::ModeSwitch => {
+                    kb_mode = next_mode(kb_mode);
+                    keyboard_draw(lcd, kb_mode)?;
+                }
+                KeyPress::Backspace => {
+                    status = None;
+                    match active {
+                        SrvField::Ip => {
+                            if !ip.is_empty() {
+                                let l = ip.len() - ip.chars().last().map_or(1, |c| c.len_utf8());
+                                ip.truncate(l);
+                            }
+                            draw_server_field(lcd, SRV_IP_Y, SRV_IP_H, "IP: ", ip.as_str(), true)?;
+                        }
+                        SrvField::Port => {
+                            if !port_str.is_empty() {
+                                let l = port_str.len() - 1;
+                                port_str.truncate(l);
+                            }
+                            draw_server_field(lcd, SRV_PORT_Y, SRV_PORT_H, "Port: ", port_str.as_str(), true)?;
+                        }
+                    }
+                    draw_server_status(lcd, None)?;
+                }
+                KeyPress::Char(c) => {
+                    status = None;
+                    match active {
+                        SrvField::Ip => {
+                            // IP : chiffres, points, lettres (pour noms de domaine éventuels)
+                            if ip.len() < 63 && (c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+                                let _ = ip.push(c);
+                            }
+                            draw_server_field(lcd, SRV_IP_Y, SRV_IP_H, "IP: ", ip.as_str(), true)?;
+                        }
+                        SrvField::Port => {
+                            // Port : chiffres uniquement, max 5 chiffres (65535)
+                            if port_str.len() < 5 && c.is_ascii_digit() {
+                                let _ = port_str.push(c);
+                            }
+                            draw_server_field(lcd, SRV_PORT_Y, SRV_PORT_H, "Port: ", port_str.as_str(), true)?;
+                        }
+                    }
+                    draw_server_status(lcd, None)?;
+                }
+                KeyPress::Confirm => {
+                    // Touche OK du clavier = même effet que bouton OK
+                    let port_val: u16 = parse_port(port_str.as_str());
+                    FreeRtos::delay_ms(150);
+                    return Ok((ip, port_val));
+                }
+                KeyPress::None => {}
+            }
+            FreeRtos::delay_ms(150);
+        }
+        FreeRtos::delay_ms(50);
+    }
+}
+
+/// Convertit une chaîne en u16 (port), avec fallback 8080.
+fn parse_port(s: &str) -> u16 {
+    let mut n: u32 = 0;
+    for c in s.chars() {
+        if let Some(d) = c.to_digit(10) {
+            n = n * 10 + d;
+            if n > 65535 { return 8080; }
+        }
+    }
+    if n == 0 { 8080 } else { n as u16 }
+}
+
 /// Formate un u32 en tableau de chiffres ASCII (sans allocation heap).
 fn format_u32(mut n: u32) -> heapless::Vec<u8, 10> {
     let mut buf = heapless::Vec::<u8, 10>::new();

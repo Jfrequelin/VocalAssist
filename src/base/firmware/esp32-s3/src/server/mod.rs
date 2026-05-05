@@ -99,6 +99,17 @@ impl ServerPing {
     // GET /health
     // ----------------------------------------------------------------
 
+    /// Accesseurs pour l'UI
+    pub fn host(&self) -> &str { self.host.as_str() }
+    pub fn port(&self) -> u16  { self.port }
+
+    /// Teste la connectivité vers une adresse donnée sans modifier la config NVS.
+    pub fn ping_address(&mut self, host: &str, port: u16) -> bool {
+        let url = format!("http://{}:{}/health", host, port);
+        info!("Test connexion: GET {}", url);
+        self.do_request(url).is_ok()
+    }
+
     pub fn ping(&mut self) -> PingResult {
         let url = format!("http://{}:{}/health", self.host, self.port);
         info!("GET {}", url);
