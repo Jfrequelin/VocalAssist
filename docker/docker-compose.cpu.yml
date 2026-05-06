@@ -1,0 +1,17 @@
+# Override CPU-only — utiliser quand nvidia-container-toolkit n'est pas installé.
+# Usage: docker compose -f docker/docker-compose.yml -f docker/docker-compose.cpu.yml up -d
+#
+# Annule les réservations GPU pour ollama et bridge.
+
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices: []
+
+  bridge:
+    deploy:
+      resources:
+        reservations:
+          devices: []

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! buffers.rs — Buffers thread-safe pour audio et vidéo
 
 use anyhow::Result;

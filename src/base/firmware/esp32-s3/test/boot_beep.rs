@@ -10,6 +10,8 @@ use log::info;
 mod audio;
 #[path = "../src/buffers.rs"]
 mod buffers;
+#[path = "../src/config/mod.rs"]
+mod config;
 
 const I2C_PORT: i2c_port_t = i2c_port_t_I2C_NUM_0;
 const I2C_SPEED_HZ: u32 = 400_000;

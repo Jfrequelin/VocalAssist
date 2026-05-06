@@ -1,7 +1,9 @@
 /// ui.rs — Écrans applicatifs (provisioning WiFi, statut, clavier tactile)
 
-use crate::lcd::{LcdDisplay, TouchPoint, COLOR_BLACK, COLOR_BLUE, COLOR_GRAY, COLOR_GREEN,
-                 COLOR_ORANGE, COLOR_RED, COLOR_WHITE, LCD_W, LCD_H};
+#[allow(unused_imports)] // couleurs utilisées dans le binaire, absentes du harness de test
+use crate::lcd::{LcdDisplay, TouchPoint,
+    COLOR_BLACK, COLOR_BLUE, COLOR_GRAY, COLOR_GREEN, COLOR_ORANGE, COLOR_RED, COLOR_WHITE,
+    LCD_W, LCD_H};
 use anyhow::Result;
 use esp_idf_hal::delay::FreeRtos;
 use esp_idf_sys::esp_timer_get_time;
@@ -357,26 +359,6 @@ pub fn show_wifi_failed(lcd: &mut LcdDisplay) -> Result<()> {
     Ok(())
 }
 
-// ----------------------------------------------------------------
-// Écran : résultat ping serveur
-// ----------------------------------------------------------------
-
-pub fn show_server_ok(lcd: &mut LcdDisplay, version: &str, latency_ms: u32) -> Result<()> {
-    lcd.fill(COLOR_BLACK)?;
-    lcd.fill_rect(50, 140, 260, 40, COLOR_GREEN)?;
-    draw_text_lg(lcd, "Serveur OK", 100, 166, EG_BLACK)?;
-    let mut line = heapless::String::<32>::new();
-    let _ = line.push_str("v");
-    for c in version.chars().take(10) { let _ = line.push(c); }
-    let _ = line.push_str("  ");
-    let ms_str = format_u32(latency_ms);
-    for c in ms_str.iter().copied().map(|b| b as char) { let _ = line.push(c); }
-    let _ = line.push_str("ms");
-    draw_text(lcd, line.as_str(), 90, 195)?;
-    info!("UI: Serveur OK ✓ — v{} {}ms", version, latency_ms);
-    Ok(())
-}
-
 pub fn show_server_unreachable(lcd: &mut LcdDisplay) -> Result<()> {
     lcd.fill(COLOR_BLACK)?;
     lcd.fill_rect(50, 140, 260, 40, COLOR_RED)?;
@@ -384,247 +366,6 @@ pub fn show_server_unreachable(lcd: &mut LcdDisplay) -> Result<()> {
     draw_text(lcd, "Injoignable", 110, 195)?;
     info!("UI: Serveur injoignable ✗");
     Ok(())
-}
-
-// ----------------------------------------------------------------
-// Écran : configuration du serveur (IP + port + test connexion)
-// ----------------------------------------------------------------
-
-// Layout (y=0..132 au-dessus du clavier) :
-//  y=0..32   : bannière bleue "Config Serveur"
-//  y=35..57  : champ IP    (fond bleu foncé = actif, gris foncé = inactif)
-//  y=61..83  : champ Port
-//  y=87..115 : boutons [TEST CONNECT] [OK/SAUVER]
-//  y=118..130: ligne résultat du test
-//  y=132+    : clavier tactile
-
-const SRV_IP_Y:       u16 = 35;
-const SRV_IP_H:       u16 = 22;
-const SRV_PORT_Y:     u16 = 61;
-const SRV_PORT_H:     u16 = 22;
-const SRV_BTN_Y:      u16 = 87;
-const SRV_BTN_H:      u16 = 28;
-const SRV_BTN_TEST_X: u16 = 20;
-const SRV_BTN_OK_X:   u16 = 190;
-const SRV_BTN_W:      u16 = 150;
-const SRV_STATUS_Y:   u16 = 128;   // baseline texte status
-const SRV_FIELD_X:    u16 = 10;
-const SRV_FIELD_W:    u16 = 340;
-
-// Bleu foncé RGB565 (~0,0,10) pour champ actif
-const COLOR_FIELD_ACTIVE:   u16 = 0x000A;
-// Gris très foncé RGB565 pour champ inactif
-const COLOR_FIELD_INACTIVE: u16 = 0x1082;
-// Vert foncé RGB565 pour bouton OK
-const COLOR_BTN_OK:         u16 = 0x0320;
-
-#[derive(Clone, Copy, PartialEq)]
-enum SrvField { Ip, Port }
-
-fn draw_server_field(
-    lcd: &mut LcdDisplay,
-    y: u16, h: u16,
-    label: &str, value: &str,
-    active: bool,
-) -> Result<()> {
-    let bg = if active { COLOR_FIELD_ACTIVE } else { COLOR_FIELD_INACTIVE };
-    lcd.fill_rect(SRV_FIELD_X, y, SRV_FIELD_W, h, bg)?;
-    let mut line = heapless::String::<72>::new();
-    let _ = line.push_str(label);
-    for c in value.chars().take(60) { let _ = line.push(c); }
-    if active { let _ = line.push('_'); }   // curseur
-    draw_text_color(lcd, line.as_str(), SRV_FIELD_X as i32 + 4, y as i32 + 16, EG_WHITE)?;
-    Ok(())
-}
-
-fn draw_server_screen_full(
-    lcd: &mut LcdDisplay,
-    ip: &str, port: &str,
-    active: SrvField,
-) -> Result<()> {
-    lcd.fill_rect(0, 0, LCD_W, KB_ORIGIN_Y, COLOR_BLACK)?;
-    lcd.draw_banner(0, 32, COLOR_BLUE)?;
-    // "Config Serveur" = 14 chars × 10px = 140px → x=(360-140)/2=110
-    draw_text_lg(lcd, "Config Serveur", 110, 24, EG_WHITE)?;
-
-    draw_server_field(lcd, SRV_IP_Y, SRV_IP_H, "IP: ", ip, active == SrvField::Ip)?;
-    draw_server_field(lcd, SRV_PORT_Y, SRV_PORT_H, "Port: ", port, active == SrvField::Port)?;
-
-    // Bouton TEST
-    lcd.fill_rect(SRV_BTN_TEST_X, SRV_BTN_Y, SRV_BTN_W, SRV_BTN_H, COLOR_BLUE)?;
-    draw_text_color(lcd, "TEST CONNECT", SRV_BTN_TEST_X as i32 + 10, SRV_BTN_Y as i32 + 20, EG_WHITE)?;
-
-    // Bouton OK
-    lcd.fill_rect(SRV_BTN_OK_X, SRV_BTN_Y, SRV_BTN_W, SRV_BTN_H, COLOR_BTN_OK)?;
-    draw_text_color(lcd, "OK / SAUVER", SRV_BTN_OK_X as i32 + 12, SRV_BTN_Y as i32 + 20, EG_WHITE)?;
-
-    Ok(())
-}
-
-fn draw_server_status(lcd: &mut LcdDisplay, status: Option<bool>) -> Result<()> {
-    lcd.fill_rect(0, SRV_STATUS_Y - 14, LCD_W, 16, COLOR_BLACK)?;
-    match status {
-        Some(true)  => draw_text_color(lcd, "Serveur joignable OK !", 65, SRV_STATUS_Y as i32, EG_GREEN)?,
-        Some(false) => draw_text_color(lcd, "Injoignable !", 105, SRV_STATUS_Y as i32, EG_RED)?,
-        None        => {}
-    }
-    Ok(())
-}
-
-/// Écran de configuration du serveur.
-///
-/// Affiche les champs IP et Port (pré-remplis depuis `current_host`/`current_port`),
-/// un bouton TEST pour tester la connexion, et un bouton OK pour confirmer.
-/// `test_fn` reçoit (host, port) et retourne `true` si le serveur répond.
-///
-/// Retourne `(host, port)` validés par l'utilisateur.
-pub fn run_server_config<F>(
-    lcd: &mut LcdDisplay,
-    current_host: &str,
-    current_port: u16,
-    test_fn: &mut F,
-) -> Result<(heapless::String<64>, u16)>
-where
-    F: FnMut(&str, u16) -> bool,
-{
-    let mut ip: heapless::String<64> = heapless::String::new();
-    for c in current_host.chars().take(63) { let _ = ip.push(c); }
-
-    // Convertit le port en chaîne
-    let port_num = current_port;
-    let mut port_str: heapless::String<8> = heapless::String::new();
-    let digits = format_u32(port_num as u32);
-    for b in digits.iter() { let _ = port_str.push(*b as char); }
-
-    let mut active = SrvField::Ip;
-    let mut kb_mode = KeyboardMode::Numbers;
-    draw_server_screen_full(lcd, ip.as_str(), port_str.as_str(), active)?;
-    keyboard_draw(lcd, kb_mode)?;
-
-    loop {
-        if let Some(p) = lcd.read_touch() {
-            // --- Changement de champ actif ---
-            if p.y >= SRV_IP_Y && p.y < SRV_IP_Y + SRV_IP_H && p.x >= SRV_FIELD_X && p.x < SRV_FIELD_X + SRV_FIELD_W {
-                if active != SrvField::Ip {
-                    active = SrvField::Ip;
-                    draw_server_field(lcd, SRV_IP_Y, SRV_IP_H, "IP: ", ip.as_str(), true)?;
-                    draw_server_field(lcd, SRV_PORT_Y, SRV_PORT_H, "Port: ", port_str.as_str(), false)?;
-                    FreeRtos::delay_ms(150);
-                    continue;
-                }
-            }
-            if p.y >= SRV_PORT_Y && p.y < SRV_PORT_Y + SRV_PORT_H && p.x >= SRV_FIELD_X && p.x < SRV_FIELD_X + SRV_FIELD_W {
-                if active != SrvField::Port {
-                    active = SrvField::Port;
-                    draw_server_field(lcd, SRV_IP_Y, SRV_IP_H, "IP: ", ip.as_str(), false)?;
-                    draw_server_field(lcd, SRV_PORT_Y, SRV_PORT_H, "Port: ", port_str.as_str(), true)?;
-                    FreeRtos::delay_ms(150);
-                    continue;
-                }
-            }
-
-            // --- Bouton TEST ---
-            if p.x >= SRV_BTN_TEST_X && p.x < SRV_BTN_TEST_X + SRV_BTN_W
-                && p.y >= SRV_BTN_Y && p.y < SRV_BTN_Y + SRV_BTN_H
-            {
-                let port_val: u16 = parse_port(port_str.as_str());
-                // "Test en cours..."
-                lcd.fill_rect(0, SRV_STATUS_Y - 14, LCD_W, 16, COLOR_BLACK)?;
-                draw_text_color(lcd, "Test en cours...", 80, SRV_STATUS_Y as i32, EG_WHITE)?;
-                let ok = test_fn(ip.as_str(), port_val);
-                draw_server_status(lcd, Some(ok))?;
-                FreeRtos::delay_ms(150);
-                continue;
-            }
-
-            // --- Bouton OK ---
-            if p.x >= SRV_BTN_OK_X && p.x < SRV_BTN_OK_X + SRV_BTN_W
-                && p.y >= SRV_BTN_Y && p.y < SRV_BTN_Y + SRV_BTN_H
-            {
-                let port_val: u16 = parse_port(port_str.as_str());
-                FreeRtos::delay_ms(150);
-                return Ok((ip, port_val));
-            }
-
-            // --- Clavier ---
-            match keyboard_flash_pressed(lcd, p, kb_mode)? {
-                KeyPress::ModeSwitch => {
-                    kb_mode = next_mode(kb_mode);
-                    keyboard_draw(lcd, kb_mode)?;
-                }
-                KeyPress::Backspace => {
-                    match active {
-                        SrvField::Ip => {
-                            if !ip.is_empty() {
-                                let l = ip.len() - ip.chars().last().map_or(1, |c| c.len_utf8());
-                                ip.truncate(l);
-                            }
-                            draw_server_field(lcd, SRV_IP_Y, SRV_IP_H, "IP: ", ip.as_str(), true)?;
-                        }
-                        SrvField::Port => {
-                            if !port_str.is_empty() {
-                                let l = port_str.len() - 1;
-                                port_str.truncate(l);
-                            }
-                            draw_server_field(lcd, SRV_PORT_Y, SRV_PORT_H, "Port: ", port_str.as_str(), true)?;
-                        }
-                    }
-                    draw_server_status(lcd, None)?;
-                }
-                KeyPress::Char(c) => {
-                    match active {
-                        SrvField::Ip => {
-                            // IP : chiffres, points, lettres (pour noms de domaine éventuels)
-                            if ip.len() < 63 && (c.is_ascii_alphanumeric() || c == '.' || c == '-') {
-                                let _ = ip.push(c);
-                            }
-                            draw_server_field(lcd, SRV_IP_Y, SRV_IP_H, "IP: ", ip.as_str(), true)?;
-                        }
-                        SrvField::Port => {
-                            // Port : chiffres uniquement, max 5 chiffres (65535)
-                            if port_str.len() < 5 && c.is_ascii_digit() {
-                                let _ = port_str.push(c);
-                            }
-                            draw_server_field(lcd, SRV_PORT_Y, SRV_PORT_H, "Port: ", port_str.as_str(), true)?;
-                        }
-                    }
-                    draw_server_status(lcd, None)?;
-                }
-                KeyPress::Confirm => {
-                    // Touche OK du clavier = même effet que bouton OK
-                    let port_val: u16 = parse_port(port_str.as_str());
-                    FreeRtos::delay_ms(150);
-                    return Ok((ip, port_val));
-                }
-                KeyPress::None => {}
-            }
-            FreeRtos::delay_ms(150);
-        }
-        FreeRtos::delay_ms(50);
-    }
-}
-
-/// Convertit une chaîne en u16 (port), avec fallback 8080.
-fn parse_port(s: &str) -> u16 {
-    let mut n: u32 = 0;
-    for c in s.chars() {
-        if let Some(d) = c.to_digit(10) {
-            n = n * 10 + d;
-            if n > 65535 { return 8080; }
-        }
-    }
-    if n == 0 { 8080 } else { n as u16 }
-}
-
-/// Formate un u32 en tableau de chiffres ASCII (sans allocation heap).
-fn format_u32(mut n: u32) -> heapless::Vec<u8, 10> {
-    let mut buf = heapless::Vec::<u8, 10>::new();
-    if n == 0 { let _ = buf.push(b'0'); return buf; }
-    let mut tmp = [0u8; 10];
-    let mut i = 0;
-    while n > 0 { tmp[i] = b'0' + (n % 10) as u8; n /= 10; i += 1; }
-    for j in (0..i).rev() { let _ = buf.push(tmp[j]); }
-    buf
 }
 
 // ----------------------------------------------------------------
@@ -816,6 +557,123 @@ pub fn run_wifi_provisioning(
 }
 
 // ================================================================
+// Écran Config HA
+// ================================================================
+
+/// Dessine le cadre + contenu d'un champ de saisie texte générique.
+fn draw_field_content(lcd: &mut LcdDisplay, label: &str, value: &str) -> Result<()> {
+    // Titre du label
+    lcd.fill_rect(0, 58, LCD_W, 18, COLOR_BLACK)?;
+    draw_text(lcd, label, 20, 74)?;
+    // Cadre + contenu
+    lcd.fill_rect(20, 78, LCD_W - 40, 44, COLOR_WHITE)?;
+    lcd.fill_rect(22, 80, LCD_W - 44, 40, COLOR_BLACK)?;
+    // Valeur (tronquée à 38 chars pour tenir sur l'écran)
+    let mut line: heapless::String<48> = heapless::String::new();
+    for c in value.chars().take(38) { let _ = line.push(c); }
+    draw_text_color(lcd, line.as_str(), 28, 106, EG_GREEN)?;
+    Ok(())
+}
+
+/// Saisit un champ texte via le clavier tactile.
+/// `title` : titre (ex. "Config HA 1/2"), `label` : libellé du champ.
+/// `initial` : valeur initiale affichée. `kb_init` : mode clavier initial.
+/// Retourne `Some(valeur)` si confirmé, `None` si annulé (back).
+fn run_text_field_screen(
+    lcd: &mut LcdDisplay,
+    title: &str,
+    label: &str,
+    initial: &str,
+    kb_init: KeyboardMode,
+) -> Result<Option<heapless::String<64>>> {
+    let mut value: heapless::String<64> = heapless::String::new();
+    for c in initial.chars().take(63) { let _ = value.push(c); }
+
+    // Dessiner l'écran complet
+    lcd.fill(COLOR_BLACK)?;
+    lcd.draw_banner(0, 32, COLOR_BLUE)?;
+    draw_text_lg(lcd, title, 20, 24, EG_WHITE)?;
+    draw_back_button(lcd, BACK_BTN_RIGHT_X, BACK_BTN_PASS_Y)?;
+    draw_field_content(lcd, label, value.as_str())?;
+    let mut kb_mode = kb_init;
+    keyboard_draw(lcd, kb_mode)?;
+
+    loop {
+        if let Some(p) = lcd.read_touch() {
+            if is_back_touch(p, BACK_BTN_RIGHT_X, BACK_BTN_PASS_Y) {
+                FreeRtos::delay_ms(150);
+                return Ok(None);
+            }
+            match keyboard_flash_pressed(lcd, p, kb_mode)? {
+                KeyPress::Confirm => {
+                    info!("UI: champ confirmé ({} car.)", value.len());
+                    return Ok(Some(value));
+                }
+                KeyPress::ModeSwitch => {
+                    kb_mode = next_mode(kb_mode);
+                    keyboard_draw(lcd, kb_mode)?;
+                }
+                KeyPress::Backspace => {
+                    if !value.is_empty() {
+                        let new_len = value.len() - 1;
+                        value.truncate(new_len);
+                    }
+                    draw_field_content(lcd, label, value.as_str())?;
+                }
+                KeyPress::Char(c) => {
+                    let _ = value.push(c);
+                    draw_field_content(lcd, label, value.as_str())?;
+                }
+                KeyPress::None => {}
+            }
+            FreeRtos::delay_ms(150);
+        }
+        FreeRtos::delay_ms(50);
+    }
+}
+
+/// Saisir la configuration HA : host IP et port.
+/// Retourne `(host, port)` après confirmation (ou valeurs inchangées si annulé).
+pub fn run_ha_config(
+    lcd: &mut LcdDisplay,
+    current_host: &str,
+    current_port: u16,
+) -> Result<(heapless::String<64>, u16)> {
+    // Étape 1 — Host
+    let host = match run_text_field_screen(
+        lcd,
+        "Config HA 1/2",
+        "Host IP:",
+        current_host,
+        KeyboardMode::Numbers,
+    )? {
+        Some(h) if !h.is_empty() => h,
+        _ => {
+            // Annulé — retourner les valeurs actuelles
+            let mut h: heapless::String<64> = heapless::String::new();
+            for c in current_host.chars().take(63) { let _ = h.push(c); }
+            return Ok((h, current_port));
+        }
+    };
+
+    // Étape 2 — Port
+    let mut port_str: heapless::String<8> = heapless::String::new();
+    let _ = core::fmt::write(&mut port_str, format_args!("{}", current_port));
+    let port = match run_text_field_screen(
+        lcd,
+        "Config HA 2/2",
+        "Port (8123):",
+        port_str.as_str(),
+        KeyboardMode::Numbers,
+    )? {
+        Some(s) => s.as_str().parse::<u16>().unwrap_or(current_port),
+        None => current_port,
+    };
+
+    Ok((host, port))
+}
+
+// ================================================================
 // Écran READY — Phase 1
 // ================================================================
 
@@ -833,6 +691,7 @@ pub enum DeviceState {
 /// Action retournée par [`run_ready_loop`].
 pub enum ReadyAction {
     StartListening,
+    ConfigHa,
 }
 
 // --- Géométrie ---
@@ -917,27 +776,129 @@ pub fn update_ready_state(lcd: &mut LcdDisplay, state: DeviceState) -> Result<()
     draw_state_indicator(lcd, state)
 }
 
+/// Affiche la réponse texte du serveur sous le disque d'état.
+///
+/// Efface la zone de réponse puis affiche `answer` sur deux lignes si nécessaire.
+/// Appelé après réception d'une réponse `/edge/audio`.
+pub fn show_answer(lcd: &mut LcdDisplay, answer: &str, intent: &str) -> Result<()> {
+    const ANSWER_Y: i32 = 50;  // y dans la zone haute (au-dessus du disque)
+    const ANSWER_X: i32 = 10;
+    const MAX_CHARS_PER_LINE: usize = 36;
+
+    // Effacer la zone texte
+    lcd.fill_rect(0, (ANSWER_Y - 16) as u16, LCD_W, 60, COLOR_BLACK)?;
+
+    // Afficher l'intent (petit, gris)
+    if !intent.is_empty() {
+        let mut intent_line: heapless::String<72> = heapless::String::new();
+        let _ = intent_line.push_str(">");
+        for c in intent.chars().take(35) { let _ = intent_line.push(c); }
+        draw_text_color(lcd, intent_line.as_str(), ANSWER_X, ANSWER_Y, EG_GRAY)?;
+    }
+
+    // Afficher la réponse (deux lignes max)
+    let chars: heapless::Vec<char, 128> = answer.chars().take(128).collect();
+    let total = chars.len();
+    if total > 0 {
+        let line1_end = MAX_CHARS_PER_LINE.min(total);
+        let mut line1: heapless::String<40> = heapless::String::new();
+        for c in chars.iter().take(line1_end) { let _ = line1.push(*c); }
+        draw_text_color(lcd, line1.as_str(), ANSWER_X, ANSWER_Y + 18, EG_WHITE)?;
+
+        if total > MAX_CHARS_PER_LINE {
+            let mut line2: heapless::String<40> = heapless::String::new();
+            for c in chars.iter().skip(MAX_CHARS_PER_LINE).take(MAX_CHARS_PER_LINE) {
+                let _ = line2.push(*c);
+            }
+            if total > MAX_CHARS_PER_LINE * 2 {
+                // Tronquer avec ...
+                line2.truncate(line2.len().saturating_sub(3));
+                let _ = line2.push_str("...");
+            }
+            draw_text_color(lcd, line2.as_str(), ANSWER_X, ANSWER_Y + 34, EG_WHITE)?;
+        }
+    }
+    Ok(())
+}
+
 /// Boucle principale écran READY.
 ///
-/// Affiche l'état `Idle` et attend un tap sur le disque central.
-/// Retourne [`ReadyAction::StartListening`] quand l'utilisateur tape.
+/// - Tap court (< 1 s) sur le disque central → [`ReadyAction::StartListening`]
+/// - Long-press (≥ 1.5 s) n'importe où → [`ReadyAction::ConfigHa`]
 pub fn run_ready_loop(
     lcd: &mut LcdDisplay,
     wifi_ok: bool,
     server_ok: bool,
 ) -> Result<ReadyAction> {
     draw_ready_screen(lcd, DeviceState::Idle, wifi_ok, server_ok)?;
+    let mut touch_start_us: i64 = 0;
     loop {
-        if let Some(p) = lcd.read_touch() {
-            let dx = p.x as i32 - READY_CENTER_X;
-            let dy = p.y as i32 - READY_CENTER_Y;
-            let r  = READY_RADIUS as i32 + 20; // marge de tap
-            if dx * dx + dy * dy <= r * r {
-                update_ready_state(lcd, DeviceState::Listening)?;
-                FreeRtos::delay_ms(150);
-                return Ok(ReadyAction::StartListening);
+        if let Some(_p) = lcd.read_touch() {
+            if touch_start_us == 0 {
+                touch_start_us = now_us();
+            }
+            let held_ms = (now_us() - touch_start_us) / 1_000;
+            if held_ms >= 1_500 {
+                // Long-press → Config HA
+                info!("UI: long-press détecté → Config HA");
+                return Ok(ReadyAction::ConfigHa);
+            }
+        } else {
+            // Relâché
+            if touch_start_us > 0 {
+                let held_ms = (now_us() - touch_start_us) / 1_000;
+                if held_ms < 1_500 {
+                    // Tap court → écoute
+                    update_ready_state(lcd, DeviceState::Listening)?;
+                    FreeRtos::delay_ms(150);
+                    return Ok(ReadyAction::StartListening);
+                }
+                touch_start_us = 0;
             }
         }
+        FreeRtos::delay_ms(50);
+    }
+}
+
+/// Sonde le tactile pendant `max_ms` ms au maximum.
+///
+/// `touch_state` persiste entre appels (0 = pas de touche en cours).
+/// Retourne l'action détectée ou `None` si le timeout expire sans interaction.
+/// N'actualise PAS l'écran — l'appelant est responsable de l'affichage.
+pub fn poll_touch_quick(
+    lcd: &mut LcdDisplay,
+    _wifi_ok: bool,
+    _server_ok: bool,
+    max_ms: u32,
+    touch_state: &mut i64,
+) -> Result<Option<ReadyAction>> {
+    let deadline_us = now_us() + (max_ms as i64) * 1_000;
+
+    loop {
+        if now_us() >= deadline_us {
+            return Ok(None);
+        }
+
+        if let Some(_p) = lcd.read_touch() {
+            if *touch_state == 0 {
+                *touch_state = now_us();
+            }
+            let held_ms = (now_us() - *touch_state) / 1_000;
+            if held_ms >= 1_500 {
+                info!("UI: long-press → Config HA");
+                *touch_state = 0;
+                return Ok(Some(ReadyAction::ConfigHa));
+            }
+        } else if *touch_state > 0 {
+            let held_ms = (now_us() - *touch_state) / 1_000;
+            *touch_state = 0;
+            if held_ms < 1_500 {
+                update_ready_state(lcd, DeviceState::Listening)?;
+                FreeRtos::delay_ms(150);
+                return Ok(Some(ReadyAction::StartListening));
+            }
+        }
+
         FreeRtos::delay_ms(50);
     }
 }

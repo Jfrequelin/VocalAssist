@@ -1,12 +1,11 @@
+#![allow(dead_code)]
+
 use esp_idf_sys::*;
 use log::*;
-
-const CST816S_I2C_ADDR: u8 = 0x15;
-const CST816S_DATA_REG: u8 = 0x02;
-const CST816S_CHIP_ID_REG: u8 = 0xA7;
-const CST816S_SLEEP_REG: u8 = 0xFE;
-const I2C_PORT: i2c_port_t = i2c_port_t_I2C_NUM_0;
-const I2C_TIMEOUT_TICKS: TickType_t = 100;
+use crate::config::input::{
+    CST816S_CHIP_ID_REG, CST816S_DATA_REG, CST816S_I2C_ADDR, CST816S_SLEEP_REG,
+    TOUCH_I2C_PORT as I2C_PORT, TOUCH_I2C_TIMEOUT_TICKS as I2C_TIMEOUT_TICKS,
+};
 
 /// Point tactile (coordonnées X, Y)
 #[derive(Debug, Clone, Copy)]

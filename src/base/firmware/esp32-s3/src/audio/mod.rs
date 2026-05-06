@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! audio/mod.rs — Capture microphone I2S + codec ES7210
 //!
 //! Matériel (Waveshare ESP32-S3-Touch-LCD-1.85C-BOX)
@@ -29,27 +31,19 @@ use log::info;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use crate::buffers::AudioRingBuffer;
+use crate::config::audio::{
+    CAPTURE_BYTES, CAPTURE_MAX_MS, CAPTURE_MS,
+    VAD_MIN_VOICE_MS, VAD_SILENCE_STOP_MS, VAD_VOICE_THRESHOLD,
+    PLAYBACK_GAIN,
+    PLAYBACK_MAX_ADAPTIVE_GAIN, PLAYBACK_TARGET_PEAK, PLAYBACK_TIMEOUT_TICKS,
+    READ_TIMEOUT_TICKS, SAMPLE_RATE_HZ, TEST_TONE_HZ,
+};
 
 // ── GPIO pinout (schéma officiel Waveshare ESP32-S3-Touch-LCD-1.85C-BOX) ─────────
 // I2C  : SDA=IO11   SCL=IO10
 // I2S  : MCLK=IO02  BCK=IO48  LRCK=IO38  DIN(DAC)=IO47
 // Ampli: PA_CTRL=IO15  HIGH=ON  LOW=Shutdown (NS4150B Class D)
 // Expander: TCA9554PWR @I2C 0x20  (EXIO1=TP_RST, EXIO2=LCD_RST, ...)
-
-// ── Paramètres audio ────────────────────────────────────────────────────────
-pub const SAMPLE_RATE_HZ: u32   = 16_000;
-pub const CAPTURE_MS:     u32   = 3_000;
-pub const PLAYBACK_TIMEOUT_TICKS: u32 = 5_000;
-pub const READ_TIMEOUT_TICKS: u32 = 200;
-pub const CAPTURE_MAX_MS: u64 = 4_500;
-pub const PLAYBACK_GAIN: i32 = 1;
-pub const PLAYBACK_TARGET_PEAK: i32 = 12_000;
-pub const PLAYBACK_MAX_ADAPTIVE_GAIN: i32 = 6;
-pub const TEST_TONE_HZ: u32 = 440;
-/// Frames stéréo (L+R × 16 bits = 4 bytes/frame)
-pub const CAPTURE_FRAMES: usize = (SAMPLE_RATE_HZ as usize) * (CAPTURE_MS as usize / 1000);
-/// Bytes bruts stéréo
-pub const CAPTURE_BYTES:  usize = CAPTURE_FRAMES * 4;
 
 // ── I2C helpers (bus I2C0 déjà initialisé par LcdDisplay) ───────────────────
 
@@ -119,33 +113,112 @@ fn i2c_log_bus_presence() {
 const ES7210_ADDR: u8 = 0x40;
 
 /// Init ES7210 : 16 kHz, 16 bits, I2S standard, mode slave, gain 36 dB.
-/// Séquence basée sur le driver espressif/es7210 (ESP-ADF).
+/// Séquence issue du driver officiel ESP-ADF v2.7 (espressif/esp-adf).
+///
+/// Différences critiques vs l'ancienne séquence incorrecte :
+/// - 0x00=0x41 obligatoire pour sortir du reset (sans ça tout chip reste en reset)
+/// - 0x11=0x60 pour 16-bit (bits[7:5]=011), pas 0x0C (qui encode 24-bit)
+/// - 0x40=0x43 pour analog init (pas 0xC3)
+/// - 0x41/0x42=0x70 pour MIC bias 2.87V (pas 0xC3/0x08)
+/// - Registres HPF (0x20-0x23) et timing (0x09, 0x0A) ajoutés
+/// - MIC power regs 0x47-0x4A et LRCK divider (0x04, 0x05) ajoutés
+/// - 0x43/0x44 : bit4=1 active l'ADC, bits[3:0]=0x0D = gain 36dB
+/// - 0x01=0x00 à la fin pour activer tous les clocks (start)
 const ES7210_SEQ: &[(u8, u8)] = &[
-    (0x00, 0xFF), // Reset logiciel (délai 10 ms géré après)
-    (0x01, 0x30), // CLK ADC1+ADC2 ON
-    (0x02, 0x00), // MCLK depuis broche, diviseur bypass
-    (0x03, 0x00), // LRCLK divider bypass
-    (0x06, 0x00), // PDM OFF (mic analogique)
-    (0x07, 0x20), // MCLK non inversé
-    (0x11, 0x00), // I2S std, 16 bits, slave
-    (0x12, 0x00), // Port 2 normal
-    (0x40, 0xC3), // ADC3+ADC4 enable
-    (0x41, 0xC3), // ADC1+ADC2 enable
-    (0x42, 0x08), // MIC bias 2.87 V
-    (0x43, 0x0C), // ADC1 PGA 36 dB
-    (0x44, 0x0C), // ADC2 PGA 36 dB
-    (0x4B, 0x50), // Volume numérique L
-    (0x4C, 0x50), // Volume numérique R
+    // 1. Reset logiciel (délai 10ms géré dans es7210_init après cet octet)
+    (0x00, 0xFF),
+    // 2. *** SORTIR DU RESET *** — sans ça le chip ignore toutes les écritures !
+    (0x00, 0x41),
+    // 3. Désactiver tous les clocks pendant la configuration
+    (0x01, 0x3F),
+    // 4. Timing des cycles d'état (chip state / power-on cycle)
+    (0x09, 0x30),
+    (0x0A, 0x30),
+    // 5. Filtres HPF (High-Pass Filter) ADC1/2 et ADC3/4
+    (0x23, 0x2A),
+    (0x22, 0x0A),
+    (0x20, 0x0A),
+    (0x21, 0x2A),
+    // 6. Analog init : vdda=3.3V, VMID=5kΩ, power off ADC3/4 (mode slave = défaut)
+    (0x40, 0x43),
+    (0x41, 0x70), // MIC1/2 bias = 2.87V
+    (0x42, 0x70), // MIC3/4 bias = 2.87V
+    (0x07, 0x20), // OSR = 32
+    // 7. MAINCLK : clear state, puis configuration pour MCLK=4.096MHz / LRCK=16kHz
+    //    adc_div=0x01 | doubler<<6=0x40 | dll<<7=0x80 = 0xC1
+    (0x02, 0xC1),
+    (0x04, 0x01), // LRCK divider high : 4096000 / 16000 = 256 → high=0x01
+    (0x05, 0x00), // LRCK divider low  : 256 → low=0x00
+    // 8. Power-up global (power-down reg → 0x00)
+    (0x06, 0x00),
+    (0x47, 0x08), // MIC1 power ON
+    (0x48, 0x08), // MIC2 power ON
+    (0x49, 0x08), // MIC3 power (init même si non utilisé)
+    (0x4A, 0x08), // MIC4 power (idem)
+    // 9. MIC select MIC1+MIC2 : power off all, puis activer sélectivement
+    (0x4B, 0xFF), // Power off MIC1/2 temporairement
+    (0x4C, 0xFF), // Power off MIC3/4
+    //    Enable ADC1/2 clocks : 0x3F & ~0x0B = 0x34 (clear bits 0,1,3)
+    (0x01, 0x34),
+    (0x4B, 0x00), // Power ON MIC1/2
+    //    ADC1 : enable (bit4=1) + gain 36dB (0x0D) = 0x1D
+    (0x43, 0x1D),
+    //    ADC2 : enable (bit4=1) + gain 36dB (0x0D) = 0x1D
+    (0x44, 0x1D),
+    // 10. Format audio : 16-bit word length (bits[7:5]=011=0x60) + I2S standard (bits[1:0]=00)
+    (0x11, 0x60),
+    // 11. Start : activer tous les clocks (reg 0x01 = 0x00)
+    (0x01, 0x00),
 ];
+
+/// Lecture et affichage des registres ES7210 clés pour valider l'init.
+fn es7210_dump_registers() {
+    info!("[AUDIO] === ES7210 register dump ===");
+    let key_regs: &[(u8, &str)] = &[
+        (0x00, "RESET  "), (0x01, "CLK_ON "), (0x02, "MCLK   "),
+        (0x06, "PDM_CTL"), (0x07, "MCLK_NI"), (0x11, "SDP1   "),
+        (0x40, "ADC34EN"), (0x41, "ADC12EN"), (0x42, "MICBIAS"),
+        (0x43, "PGA_CH1"), (0x44, "PGA_CH2"), (0x4B, "VOL_L  "), (0x4C, "VOL_R  "),
+    ];
+    for &(reg, name) in key_regs {
+        match i2c_read_reg(ES7210_ADDR, reg) {
+            Ok(v)  => info!("[AUDIO] ES7210 [0x{:02X}] {} = 0x{:02X}", reg, name, v),
+            Err(_) => log::warn!("[AUDIO] ES7210 [0x{:02X}] {} = ERR", reg, name),
+        }
+    }
+    // Vérification basique : chip absent si reg 0x01 reste 0xFF après reset
+    if let Ok(v) = i2c_read_reg(ES7210_ADDR, 0x01) {
+        if v == 0xFF {
+            log::error!("[AUDIO] ES7210 reg 0x01 = 0xFF — chip absent ou bus I2C KO");
+        }
+    }
+    info!("[AUDIO] === fin dump ES7210 ===");
+}
 
 fn es7210_init() -> Result<()> {
     info!("[AUDIO] Init ES7210 0x{:02X}", ES7210_ADDR);
+    let mut prev_reg = 0xFFu8;
     for &(reg, val) in ES7210_SEQ {
         i2c_write_reg(ES7210_ADDR, reg, val)?;
-        if reg == 0x00 { FreeRtos::delay_ms(10); }
+        // Délai après reset (0xFF) pour laisser le chip se stabiliser avant 0x41
+        if reg == 0x00 && val == 0xFF && prev_reg != 0x00 {
+            FreeRtos::delay_ms(10);
+        }
+        prev_reg = reg;
     }
+    es7210_dump_registers();
     info!("[AUDIO] ES7210 OK");
     Ok(())
+}
+
+/// Affiche les registres ES7210 pour diagnostic post-MCLK.
+/// La séquence d'init complète (incluant les registres de format et de gain) est
+/// maintenant dans ES7210_SEQ / es7210_init(). Cette fonction n'écrit plus de
+/// registres — elle sert uniquement à vérifier l'état après démarrage I2S.
+pub fn es7210_reconfigure() {
+    info!("[AUDIO] ES7210 diagnostic post-init...");
+    es7210_dump_registers();
+    info!("[AUDIO] ES7210 diagnostic done");
 }
 
 // ── ES8311 (DAC speaker) ─────────────────────────────────────────────────────
@@ -463,6 +536,14 @@ impl<'d> MicCapture<'d> {
         {
             let (mut rx, mut tx) = self.driver.split();
 
+            // ── VAD : arrêt anticipé dès silence après voix ───────────────────
+            // chunk = 1024 bytes stéréo = 256 frames = 16 ms à 16 kHz
+            const CHUNK_MS: u32 = (CHUNK as u32 / 4) * 1000 / 16_000; // ≈ 16 ms
+            let vad_min_chunks  = (VAD_MIN_VOICE_MS  / CHUNK_MS).max(1) as usize;
+            let vad_stop_chunks = (VAD_SILENCE_STOP_MS / CHUNK_MS).max(1) as usize;
+            let mut voice_chunks   = 0usize; // chunks consécutifs au-dessus du seuil (cumulatif)
+            let mut silence_chunks = 0usize; // chunks silencieux consécutifs APRÈS voix détectée
+
             while total < CAPTURE_BYTES {
                 let now_us = unsafe { esp_timer_get_time() } as u64;
                 if now_us.saturating_sub(t0_us) > CAPTURE_MAX_MS * 1000 {
@@ -480,7 +561,36 @@ impl<'d> MicCapture<'d> {
                 }
 
                 match rx.read(&mut stereo[total..end], READ_TIMEOUT_TICKS) {
-                    Ok(n) if n > 0 => total += n,
+                    Ok(n) if n > 0 => {
+                        // Calcul du peak du chunk pour VAD
+                        let frames_in_chunk = n / 4;
+                        let mut chunk_peak: i32 = 0;
+                        for i in 0..frames_in_chunk {
+                            let base = total + i * 4;
+                            let l = i16::from_le_bytes([stereo[base], stereo[base + 1]]) as i32;
+                            let r = i16::from_le_bytes([stereo[base + 2], stereo[base + 3]]) as i32;
+                            let p = l.abs().max(r.abs());
+                            if p > chunk_peak { chunk_peak = p; }
+                        }
+
+                        if chunk_peak >= VAD_VOICE_THRESHOLD {
+                            voice_chunks += 1;
+                            silence_chunks = 0;
+                        } else {
+                            silence_chunks += 1;
+                        }
+
+                        // Arrêt anticipé : voix suffisante + silence long
+                        if voice_chunks >= vad_min_chunks && silence_chunks >= vad_stop_chunks {
+                            total += n;
+                            let elapsed_ms = (now_us.saturating_sub(t0_us) / 1000) as u32;
+                            info!("[AUDIO] VAD: arrêt anticipé à {}ms (voice={} silence={} chunks)",
+                                elapsed_ms, voice_chunks, silence_chunks);
+                            break;
+                        }
+
+                        total += n;
+                    }
                     Ok(_) => break,
                     Err(e) => {
                         log::warn!("[AUDIO] I2S read err: {:?}", e);
@@ -492,23 +602,150 @@ impl<'d> MicCapture<'d> {
 
         self.driver.rx_disable().map_err(|e| anyhow::anyhow!("rx_disable: {:?}", e))?;
         self.driver.tx_disable().map_err(|e| anyhow::anyhow!("tx_disable(capture): {:?}", e))?;
+        stereo.truncate(total);
         info!("[AUDIO] {} bytes stéréo bruts", total);
 
-        // Extraction canal gauche (bytes 0-1 de chaque frame L+R de 4 bytes)
+        // Hex dump des 32 premiers bytes bruts : si tout est 0x00, le problème est
+        // hardware (pin GPIO39 non connectée ou ES7210 ne sort pas de données I2S).
+        if total >= 32 {
+            info!(
+                "[AUDIO] RAW[0..32]: \
+                {:02X}{:02X}{:02X}{:02X} {:02X}{:02X}{:02X}{:02X} \
+                {:02X}{:02X}{:02X}{:02X} {:02X}{:02X}{:02X}{:02X} \
+                {:02X}{:02X}{:02X}{:02X} {:02X}{:02X}{:02X}{:02X} \
+                {:02X}{:02X}{:02X}{:02X} {:02X}{:02X}{:02X}{:02X}",
+                stereo[0],stereo[1],stereo[2],stereo[3],
+                stereo[4],stereo[5],stereo[6],stereo[7],
+                stereo[8],stereo[9],stereo[10],stereo[11],
+                stereo[12],stereo[13],stereo[14],stereo[15],
+                stereo[16],stereo[17],stereo[18],stereo[19],
+                stereo[20],stereo[21],stereo[22],stereo[23],
+                stereo[24],stereo[25],stereo[26],stereo[27],
+                stereo[28],stereo[29],stereo[30],stereo[31],
+            );
+        }
+
+        // Auto-détection du canal actif (L ou R) : ES7210 peut câbler le mic
+        // sur l'un ou l'autre selon la révision PCB de la carte Waveshare.
+        // Frame I2S PCM16LE = [L_lo, L_hi, R_lo, R_hi] (4 bytes)
         let frames = total / 4;
+        let mut peak_l: i32 = 0;
+        let mut peak_r: i32 = 0;
+        for i in 0..frames {
+            let l = i16::from_le_bytes([stereo[i * 4], stereo[i * 4 + 1]]) as i32;
+            let r = i16::from_le_bytes([stereo[i * 4 + 2], stereo[i * 4 + 3]]) as i32;
+            if l.abs() > peak_l { peak_l = l.abs(); }
+            if r.abs() > peak_r { peak_r = r.abs(); }
+        }
+        // Choisir le canal avec le plus de signal. Si les deux sont nuls → L par défaut.
+        let use_right = peak_r > peak_l;
+        info!(
+            "[AUDIO] Canal L peak={} R peak={} → canal choisi: {}",
+            peak_l, peak_r,
+            if use_right { "R" } else { "L" }
+        );
+
         let mut mono = Vec::with_capacity(frames * 2);
         for i in 0..frames {
-            mono.push(stereo[i * 4]);
-            mono.push(stereo[i * 4 + 1]);
+            if use_right {
+                mono.push(stereo[i * 4 + 2]);
+                mono.push(stereo[i * 4 + 3]);
+            } else {
+                mono.push(stereo[i * 4]);
+                mono.push(stereo[i * 4 + 1]);
+            }
         }
         info!("[AUDIO] PCM mono : {} bytes", mono.len());
         Ok(mono)
+    }
+
+    /// Capture `ms` millisecondes d'audio brut en stéréo PCM16LE.
+    ///
+    /// Retourne les bytes **stéréo** interleaved [L_lo, L_hi, R_lo, R_hi, …]
+    /// sans conversion mono. Utile pour diagnostiquer quel canal transporte le signal.
+    /// Taille retournée = ms × SAMPLE_RATE_HZ / 1000 × 4 bytes/frame.
+    pub fn capture_raw_stereo(&mut self, ms: u32) -> Result<Vec<u8>> {
+        let target_bytes = ((ms as usize) * (SAMPLE_RATE_HZ as usize) / 1000) * 4;
+        let timeout_us: u64 = (ms as u64 + 500) * 1000; // +500ms marge
+        const CHUNK: usize = 512;
+        let silence = [0u8; CHUNK];
+        let mut stereo = vec![0u8; target_bytes];
+        let mut total = 0usize;
+
+        self.driver.tx_enable().map_err(|e| anyhow::anyhow!("tx_enable(raw): {:?}", e))?;
+        self.driver.rx_enable().map_err(|e| anyhow::anyhow!("rx_enable(raw): {:?}", e))?;
+
+        let t0_us = unsafe { esp_timer_get_time() } as u64;
+        {
+            let (mut rx, mut tx) = self.driver.split();
+            while total < target_bytes {
+                if unsafe { esp_timer_get_time() } as u64 - t0_us > timeout_us {
+                    break;
+                }
+                let end = (total + CHUNK).min(target_bytes);
+                let chunk_len = end - total;
+                if tx.write_all(&silence[..chunk_len], READ_TIMEOUT_TICKS).is_err() {
+                    break;
+                }
+                match rx.read(&mut stereo[total..end], READ_TIMEOUT_TICKS) {
+                    Ok(n) if n > 0 => total += n,
+                    _ => break,
+                }
+            }
+        }
+
+        self.driver.rx_disable().map_err(|e| anyhow::anyhow!("rx_disable(raw): {:?}", e))?;
+        self.driver.tx_disable().map_err(|e| anyhow::anyhow!("tx_disable(raw): {:?}", e))?;
+        stereo.truncate(total);
+        Ok(stereo)
     }
 
     /// Capture CAPTURE_MS ms d'audio directement dans un AudioRingBuffer.
     ///
     /// Utile pour écrire continuellement dans un buffer circulaire sans accumuler
     /// la totalité en mémoire. Le ring buffer empêche de déborder et gère FIFO.
+    /// Active l'I2S (TX+RX) de façon permanente — à appeler une seule fois.
+    ///
+    /// Permet d'utiliser `read_stereo_chunk` en boucle sans jamais couper MCLK.
+    /// L'ES7210 en mode slave perd sa synchro si MCLK s'arrête entre deux captures.
+    pub fn start_continuous(&mut self) -> Result<()> {
+        self.driver.tx_enable().map_err(|e| anyhow::anyhow!("tx_enable(cont): {:?}", e))?;
+        self.driver.rx_enable().map_err(|e| anyhow::anyhow!("rx_enable(cont): {:?}", e))?;
+        Ok(())
+    }
+
+    /// Lit exactement `ms` ms de données stéréo brutes sans activer/désactiver l'I2S.
+    ///
+    /// Prérequis : `start_continuous()` doit avoir été appelé avant.
+    pub fn read_stereo_chunk(&mut self, ms: u32) -> Result<Vec<u8>> {
+        let target_bytes = ((ms as usize) * (SAMPLE_RATE_HZ as usize) / 1000) * 4;
+        let timeout_us: u64 = (ms as u64 + 500) * 1000;
+        const CHUNK: usize = 512;
+        let silence = [0u8; CHUNK];
+        let mut stereo = vec![0u8; target_bytes];
+        let mut total = 0usize;
+        let t0_us = unsafe { esp_timer_get_time() } as u64;
+        {
+            let (mut rx, mut tx) = self.driver.split();
+            while total < target_bytes {
+                if unsafe { esp_timer_get_time() } as u64 - t0_us > timeout_us {
+                    break;
+                }
+                let end = (total + CHUNK).min(target_bytes);
+                let chunk_len = end - total;
+                if tx.write_all(&silence[..chunk_len], READ_TIMEOUT_TICKS).is_err() {
+                    break;
+                }
+                match rx.read(&mut stereo[total..end], READ_TIMEOUT_TICKS) {
+                    Ok(n) if n > 0 => total += n,
+                    _ => break,
+                }
+            }
+        }
+        stereo.truncate(total);
+        Ok(stereo)
+    }
+
     pub fn capture_to_ring_buffer(&mut self, ring: &mut AudioRingBuffer) -> Result<()> {
         info!("[AUDIO] Capture vers ring buffer {} ms…", CAPTURE_MS);
         let mut stereo = vec![0u8; CAPTURE_BYTES];
@@ -697,6 +934,40 @@ impl MicCaptureAsync {
             })?;
         
         Ok(handle)
+    }
+
+    /// Capture une fenêtre audio courte (`ms` ms) et retourne du PCM16LE mono.
+    ///
+    /// Utilisée pour la détection de mot de déclenchement (wake word) : capture
+    /// sans VAD, courte durée, canal actif sélectionné automatiquement.
+    pub fn capture_window_mono(&self, ms: u32) -> Result<Vec<u8>> {
+        let mut mic = self.inner.lock().unwrap();
+        let stereo = mic.capture_raw_stereo(ms)?;
+        let frames = stereo.len() / 4;
+        if frames == 0 { return Ok(Vec::new()); }
+
+        // Sélectionner le canal avec le plus de signal (même logique que capture())
+        let mut peak_l: i32 = 0;
+        let mut peak_r: i32 = 0;
+        for i in 0..frames {
+            let l = i16::from_le_bytes([stereo[i * 4], stereo[i * 4 + 1]]) as i32;
+            let r = i16::from_le_bytes([stereo[i * 4 + 2], stereo[i * 4 + 3]]) as i32;
+            if l.abs() > peak_l { peak_l = l.abs(); }
+            if r.abs() > peak_r { peak_r = r.abs(); }
+        }
+        let use_right = peak_r > peak_l;
+
+        let mut mono = Vec::with_capacity(frames * 2);
+        for i in 0..frames {
+            if use_right {
+                mono.push(stereo[i * 4 + 2]);
+                mono.push(stereo[i * 4 + 3]);
+            } else {
+                mono.push(stereo[i * 4]);
+                mono.push(stereo[i * 4 + 1]);
+            }
+        }
+        Ok(mono)
     }
 }
 

@@ -20,6 +20,14 @@ Plateforme cible edge: **ESP32-S3** (Waveshare ESP32-S3-Touch-LCD-1.85C-BOX-EN).
 - [Interfaces et contrats API](02-architecture/interfaces-and-contracts.md)
 - [Mode degrade et reconnexion edge](02-architecture/edge-reconnect-degraded-mode.md)
 
+## Base ESP32-S3
+
+- [Base ESP32-S3 - index canonique](base/ESP32-S3/README.md)
+- [Configuration firmware ESP32-S3](base/ESP32-S3/firmware-configuration.md)
+- [Peripheriques ESP32-S3](base/ESP32-S3/peripherals.md)
+- [Firmware layout ESP32-S3](base/ESP32-S3/firmware-layout.md)
+- [Reseau et protocole ESP32-S3](base/ESP32-S3/network-and-protocol.md)
+
 ## 3. Livraison et pilotage
 
 - [Roadmap produit](03-delivery/roadmap.md)
@@ -39,6 +47,10 @@ Plateforme cible edge: **ESP32-S3** (Waveshare ESP32-S3-Touch-LCD-1.85C-BOX-EN).
 - [Comparatif des assistants vocaux](05-research/assistant-benchmark.md)
 - [Schema materiel Waveshare ESP32-S3-Touch-LCD-1.85C (PDF)](05-research/hardware/ESP32-S3-Touch-LCD-1.85C_V2.pdf)
 - [Wiring hardware ESP32-S3-Touch-LCD-1.85C](05-research/hardware/wiring.md)
+
+## Ressources de reference externes
+
+- Firmware Home Assistant Voice (ESPHome): https://github.com/esphome/home-assistant-voice-pe/tree/dev
 
 ## Legacy
 

@@ -1,0 +1,180 @@
+---
+# Stack complète AssistantVocal — HA + Whisper + Piper + bridge Python + Ollama LLM
+#
+# Usage:
+#   docker compose up -d
+#
+# Après le premier démarrage, configurer HA :
+#   1. http://localhost:8123 → créer compte admin
+#   2. Paramètres → Intégrations → "Wyoming Protocol" (auto-découverte)
+#   3. Paramètres → Voix → Assistants → ajouter Whisper (STT) + Piper (TTS)
+#   4. docker compose exec ollama ollama pull llama3.2  (à faire une fois)
+
+services:
+  # ─── Home Assistant ──────────────────────────────────────────────────
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    volumes:
+      - ha-config:/config
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=Europe/Paris
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8123/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ─── STT : Whisper (faster-whisper via wyoming-whisper) ──────────────
+  wyoming-whisper:
+    image: rhasspy/wyoming-whisper:latest
+    container_name: wyoming-whisper
+    restart: unless-stopped
+    command:
+      - --model
+      - base                # Profil latence minimale CPU
+      - --language
+      - fr
+      - --compute-type
+      - int8                # Accélère sur CPU
+      - --beam-size
+      - "1"                 # Décodage rapide
+      - --cpu-threads
+      - "6"
+      - --vad-filter        # Réduit les hallucinations sur bruit/silence
+      - --vad-threshold
+      - "0.45"
+      - --vad-min-speech-ms
+      - "180"
+      - --vad-min-silence-ms
+      - "450"
+      - --initial-prompt
+      - "Assistant vocal domotique en français, commandes de maison connectée."
+      - --uri
+      - tcp://0.0.0.0:10300
+      - --data-dir
+      - /data
+      - --download-dir
+      - /data
+    volumes:
+      - whisper-data:/data
+    ports:
+      - "10300:10300"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "10300"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 120s   # téléchargement du modèle au 1er démarrage
+
+  # ─── TTS : Piper (wyoming-piper) ─────────────────────────────────────
+  wyoming-piper:
+    image: rhasspy/wyoming-piper:latest
+    container_name: wyoming-piper
+    restart: unless-stopped
+    command:
+      - --voice
+      - fr_FR-siwis-medium  # Voix française naturelle; alternatives: fr_FR-upmc-medium
+      - --uri
+      - tcp://0.0.0.0:10200
+      - --data-dir
+      - /data
+      - --download-dir
+      - /data
+    volumes:
+      - piper-data:/data
+    ports:
+      - "10200:10200"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "10200"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ─── Wake Word : openWakeWord (wyoming-openwakeword) ─────────────────
+  wyoming-openwakeword:
+    image: rhasspy/wyoming-openwakeword:latest
+    container_name: wyoming-openwakeword
+    restart: unless-stopped
+    command:
+      - --preload-model
+      - okay_nabu
+      - --uri
+      - tcp://0.0.0.0:10400
+    ports:
+      - "10400:10400"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "10400"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ─── (Optionnel) Ollama — LLM local ──────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ollama-data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ─── Bridge ESP32 → STT → LLM → TTS ──────────────────────────────
+  bridge:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.bridge
+    container_name: av-bridge
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - LANGUAGE=fr
+      - WHISPER_MODEL=${WHISPER_MODEL:-small}
+      - PIPER_VOICE=${PIPER_VOICE:-fr_FR-siwis-medium}
+      - LLM_URL=http://localhost:11434
+      - LLM_MODEL=${LLM_MODEL:-llama3.2}
+      - ECHO_FALLBACK=false
+      - SERVER_PORT=8080
+    volumes:
+      - piper-data:/app/models/piper
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  ha-config:
+  whisper-data:
+  piper-data:
+  ollama-data:

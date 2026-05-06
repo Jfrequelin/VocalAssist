@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// lcd/mod.rs — Driver LCD ST77916 QSPI + touch CST816S (stub)
 ///
 /// Carte : Waveshare ESP32-S3-Touch-LCD-1.85C-BOX-EN
@@ -18,51 +20,18 @@ use esp_idf_hal::delay::FreeRtos;
 use esp_idf_sys::*;
 use log::{info, warn};
 use crate::touch::CST816S;
-
-pub const LCD_W: u16 = 360;
-pub const LCD_H: u16 = 360;
-
-// Couleurs RGB565
-pub const COLOR_BLACK:  u16 = 0x0000;
-pub const COLOR_WHITE:  u16 = 0xFFFF;
-pub const COLOR_GREEN:  u16 = 0x07E0;
-pub const COLOR_RED:    u16 = 0xF800;
-pub const COLOR_BLUE:   u16 = 0x001F;
-pub const COLOR_GRAY:   u16 = 0x8410;
-pub const COLOR_ORANGE: u16 = 0xFD20;
-
-// Opcodes QSPI ST77916
-const OPCODE_WRITE_CMD:   u32 = 0x02;
-const OPCODE_READ_CMD:    u32 = 0x0B;
-const OPCODE_WRITE_COLOR: u32 = 0x32;
-const LCD_CMD_RAMWR:      u8  = 0x2C;
-const LCD_CMD_RAMWRC:     u8  = 0x3C;
-
-// Pins QSPI LCD (Waveshare officiel)
-const LCD_SCK:   i32 = 40;
-const LCD_DATA0: i32 = 46;  // mosi
-const LCD_DATA1: i32 = 45;
-const LCD_DATA2: i32 = 42;
-const LCD_DATA3: i32 = 41;
-const LCD_CS:    i32 = 21;
-const LCD_BL:    i32 = 5;
-const LCD_TE:    i32 = 18;
-const TP_INT:    i32 = 4;
-const TP_SCL:    i32 = 10;
-const TP_SDA:    i32 = 11;
-
-// RST via GPIO expander I²C TCA9554PWR
-const EXIO_TP_RST: u8 = 1;   // Extend IO1
-const EXIO_LCD_RST: u8 = 2;  // Extend IO2
-
-const I2C_PORT: i2c_port_t = i2c_port_t_I2C_NUM_0;
-const I2C_SPEED_HZ: u32 = 400_000;
-const I2C_TIMEOUT_TICKS: TickType_t = 100;
-
-// TCA9554 registers
-const TCA9554_REG_INPUT: u8 = 0x00;
-const TCA9554_REG_OUTPUT: u8 = 0x01;
-const TCA9554_REG_CONFIG: u8 = 0x03;
+#[allow(unused_imports)]
+pub use crate::config::display::{
+    COLOR_BLACK, COLOR_BLUE, COLOR_GRAY, COLOR_GREEN, COLOR_ORANGE, COLOR_RED,
+    COLOR_WHITE, LCD_H, LCD_W,
+};
+use crate::config::display::{
+    EXIO_LCD_RST, EXIO_TP_RST, I2C_PORT, I2C_SPEED_HZ, I2C_TIMEOUT_TICKS,
+    LCD_BL, LCD_CMD_RAMWR, LCD_CMD_RAMWRC, LCD_CS, LCD_DATA0, LCD_DATA1,
+    LCD_DATA2, LCD_DATA3, LCD_SCK, LCD_TE,
+    OPCODE_READ_CMD, OPCODE_WRITE_CMD, OPCODE_WRITE_COLOR, TCA9554_REG_CONFIG,
+    TCA9554_REG_INPUT, TCA9554_REG_OUTPUT, TP_INT, TP_SCL, TP_SDA,
+};
 
 // SPI2_HOST = 1
 const SPI_HOST_ID: spi_host_device_t = spi_host_device_t_SPI2_HOST;

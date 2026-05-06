@@ -1,0 +1,18 @@
+# ─── Serveur pont LLM — AssistantVocal ─────────────────────────────────────
+
+# Framework web
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+
+# STT : Whisper local (faster-whisper = CTranslate2, ~4× plus rapide qu'openai-whisper)
+faster-whisper>=1.0.3
+
+# TTS : Piper (voix locales haute qualité)
+piper-tts>=1.2.0
+
+# HTTP client (appels LLM Ollama)
+requests>=2.32.0
+
+# Traitement signal audio
+numpy>=1.26.0
+scipy>=1.13.0     # rééchantillonnage (resample_poly)

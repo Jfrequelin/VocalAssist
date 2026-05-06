@@ -1,0 +1,598 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://assistantvocal.local/schemas/protocol-v3-envelope.schema.json",
+  "title": "AssistantVocal Protocol v3 Envelope",
+  "description": "Schema JSON du protocole bidirectionnel v3 (base <-> serveur).",
+  "type": "object",
+  "required": [
+    "api_version",
+    "kind",
+    "direction",
+    "tenant_id",
+    "device_id",
+    "session_id",
+    "message_id",
+    "correlation_id",
+    "timestamp_ms",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "api_version": {
+      "const": "v3"
+    },
+    "transport": {
+      "type": "string",
+      "enum": ["ws", "http"]
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "device_id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9._:-]{1,128}$"
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "message_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["edge_to_server", "server_to_edge"]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "event",
+        "command",
+        "ack",
+        "error",
+        "media_chunk",
+        "media_commit",
+        "media_cancel",
+        "heartbeat"
+      ]
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "device.online",
+        "device.offline",
+        "device.heartbeat",
+        "device.health",
+        "network.changed",
+        "ui.button.pressed",
+        "ui.touch",
+        "conversation.started",
+        "conversation.ended",
+        "audio.capture.started",
+        "audio.capture.completed",
+        "audio.playback.started",
+        "audio.playback.completed",
+        "image.capture.started",
+        "image.capture.completed"
+      ]
+    },
+    "qos": {
+      "type": "string",
+      "enum": ["best_effort", "at_least_once"],
+      "default": "best_effort"
+    },
+    "requires_ack": {
+      "type": "boolean",
+      "default": false
+    },
+    "timestamp_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "payload": {
+      "type": "object"
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "trace_id": {
+          "type": "string"
+        },
+        "firmware_version": {
+          "type": "string"
+        },
+        "rssi": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          }
+        }
+      },
+      "then": {
+        "required": ["event_type"],
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/eventPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "event"
+          },
+          "event_type": {
+            "const": "device.online"
+          }
+        },
+        "required": ["kind", "event_type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": ["capabilities"],
+            "properties": {
+              "capabilities": {
+                "$ref": "#/$defs/capabilitySet"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "command"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/commandPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "ack"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ackPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/errorPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "media_chunk"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/mediaChunkPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "media_commit"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/mediaCommitPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "media_cancel"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/mediaCancelPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "heartbeat"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/heartbeatPayload"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "eventPayload": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "capabilities": {
+          "$ref": "#/$defs/capabilitySet"
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "encoding": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "media_id": {
+          "type": "string"
+        }
+      }
+    },
+    "capabilitySet": {
+      "type": "object",
+      "required": [
+        "audio_input",
+        "audio_output",
+        "display",
+        "touch",
+        "camera",
+        "supported_image_encodings",
+        "supported_audio_encodings",
+        "max_uplink_chunk_bytes",
+        "max_downlink_chunk_bytes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "audio_input": {
+          "type": "boolean"
+        },
+        "audio_output": {
+          "type": "boolean"
+        },
+        "display": {
+          "type": "object",
+          "required": ["present"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "shape": { "type": "string", "enum": ["round", "rect"] },
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 },
+            "pixel_format": { "type": "string", "enum": ["rgb565", "rgb888", "argb8888"] }
+          }
+        },
+        "touch": {
+          "type": "boolean"
+        },
+        "camera": {
+          "type": "boolean"
+        },
+        "supported_image_encodings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["jpeg", "png", "rgb565"]
+          },
+          "uniqueItems": true
+        },
+        "supported_audio_encodings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["pcm16le", "opus"]
+          },
+          "uniqueItems": true
+        },
+        "max_uplink_chunk_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 262144
+        },
+        "max_downlink_chunk_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 262144
+        }
+      }
+    },
+    "commandPayload": {
+      "type": "object",
+      "required": ["command"],
+      "additionalProperties": true,
+      "properties": {
+        "command": {
+          "type": "string",
+          "enum": [
+            "audio.play",
+            "audio.stop",
+            "ui.render",
+            "ui.set_state",
+            "camera.capture",
+            "device.reboot",
+            "config.update"
+          ]
+        },
+        "media_id": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["low", "normal", "high"]
+        }
+      }
+    },
+    "ackPayload": {
+      "type": "object",
+      "required": ["acked_message_id", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "acked_message_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ok", "duplicate", "rejected"]
+        }
+      }
+    },
+    "errorPayload": {
+      "type": "object",
+      "required": ["code", "message", "retryable"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "invalid_json",
+            "invalid_schema",
+            "unauthorized",
+            "forbidden_device",
+            "message_too_large",
+            "invalid_media_chunk",
+            "media_checksum_mismatch",
+            "ack_timeout",
+            "internal_error"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "mediaChunkPayload": {
+      "type": "object",
+      "required": [
+        "media_id",
+        "media_kind",
+        "encoding",
+        "chunk_index",
+        "chunk_count",
+        "data_base64"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "media_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "media_kind": {
+          "type": "string",
+          "enum": ["audio", "image"]
+        },
+        "encoding": {
+          "type": "string",
+          "enum": ["pcm16le", "opus", "jpeg", "png", "rgb565"]
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "chunk_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "chunk_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "data_base64": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "media_kind": {
+                "const": "audio"
+              }
+            }
+          },
+          "then": {
+            "required": ["sample_rate_hz", "channels"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "media_kind": {
+                "const": "image"
+              }
+            }
+          },
+          "then": {
+            "required": ["width", "height"]
+          }
+        }
+      ]
+    },
+    "mediaCommitPayload": {
+      "type": "object",
+      "required": ["media_id", "media_kind", "chunk_count", "total_bytes", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "media_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "media_kind": {
+          "type": "string",
+          "enum": ["audio", "image"]
+        },
+        "chunk_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{64}$"
+        }
+      }
+    },
+    "mediaCancelPayload": {
+      "type": "object",
+      "required": ["media_id", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "media_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "heartbeatPayload": {
+      "type": "object",
+      "required": ["uptime_ms", "free_heap", "wifi_rssi", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "uptime_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "free_heap": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wifi_rssi": {
+          "type": "integer"
+        },
+        "battery_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "state": {
+          "type": "string",
+          "enum": ["idle", "listening", "thinking", "speaking", "error", "muted"]
+        }
+      }
+    }
+  }
+}

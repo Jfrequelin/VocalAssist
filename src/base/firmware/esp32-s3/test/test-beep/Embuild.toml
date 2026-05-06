@@ -1,0 +1,3 @@
+[esp-idf-sys]
+esp_idf_version = "v5.2.2"
+sdkconfig_defaults = ["../sdkconfig.defaults"]

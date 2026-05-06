@@ -5,7 +5,12 @@ GET  /health       -> ping
 POST /edge/audio   -> reçoit PCM16LE base64, renvoie réponse stub
 Usage : python3 scripts/mock_server.py [port]
 """
-import sys, time, base64, struct, logging, math
+import base64
+import logging
+import math
+import struct
+import sys
+import time
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -28,7 +33,7 @@ def apply_gain_pcm16(pcm: bytes, gain: float = 3.0) -> bytes:
         return pcm
     samples = len(pcm) // 2
     values = list(struct.unpack(f"<{samples}h", pcm[:samples * 2]))
-    boosted = []
+    boosted: list[int] = []
     for s in values:
         v = int(s * gain)
         if v > 32767:
@@ -39,7 +44,7 @@ def apply_gain_pcm16(pcm: bytes, gain: float = 3.0) -> bytes:
     return struct.pack(f"<{samples}h", *boosted)
 
 @app.get("/health")
-def health():
+def health() -> dict[str, object]:
     return {"ok": True, "version": "mock-0.2.0", "uptime_s": int(time.time() - START_TIME)}
 
 @app.post("/edge/audio")

@@ -9,8 +9,13 @@ name = "assistant-edge"
 harness = false
 
 [[bin]]
-name = "test-beep"
-path = "test/boot_beep.rs"
+name = "mic-loopback"
+path = "test/mic_loopback.rs"
+harness = false
+
+[[bin]]
+name = "test-micro"
+path = "test/test_micro.rs"
 harness = false
 
 [profile.release]

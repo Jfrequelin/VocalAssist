@@ -12,18 +12,11 @@ use embedded_svc::http::Method;
 use embedded_io::Write as _;
 use heapless::String as HString;
 use log::{info, warn};
-
-const NVS_NAMESPACE_SERVER: &str = "server_cfg";
-const NVS_KEY_HOST:         &str = "host";
-const NVS_KEY_PORT:         &str = "port";
-#[allow(dead_code)]
-const DEFAULT_HOST:         &str = "192.168.1.100";
-#[allow(dead_code)]
-const DEFAULT_PORT:         u16  = 8080;
-const TIMEOUT_MS:           u32  = 5_000;
-const RESPONSE_BUF_SIZE:    usize = 256;
-const AUDIO_RESP_CHUNK_SIZE: usize = 2048;
-const AUDIO_RESP_MAX_SIZE:   usize = 350_000;
+use crate::config::network::{
+    AUDIO_RESP_CHUNK_SIZE, AUDIO_RESP_MAX_SIZE, DEFAULT_HOST, DEFAULT_PORT,
+    NET_MAX_PCM_BYTES, NET_SILENCE_PAD_SAMPLES, NET_SILENCE_THRESHOLD,
+    NVS_KEY_HOST, NVS_KEY_PORT, NVS_NAMESPACE_SERVER, RESPONSE_BUF_SIZE, TIMEOUT_MS,
+};
 
 /// Réponse du serveur à un POST /edge/audio
 #[derive(Debug, Clone)]
@@ -32,8 +25,23 @@ pub struct AudioResponse {
     pub answer: HString<256>,
     /// Intent détecté
     pub intent: HString<64>,
-    /// Audio PCM16LE mono renvoyé par le serveur (optionnel)
+    /// Audio PCM16LE mono renvoyé par le serveur (premier chunk, optionnel)
     pub audio_pcm: Option<Vec<u8>>,
+    /// Identifiant de session streaming (présent si has_more=true)
+    pub stream_id: Option<HString<64>>,
+    /// Indique s'il y a d'autres chunks à récupérer via GET /edge/stream/{id}/{idx}
+    pub has_more: bool,
+    /// Nombre total de chunks dans la session
+    pub total_chunks: u32,
+}
+
+/// Un chunk audio supplémentaire récupéré via GET /edge/stream/{stream_id}/{idx}
+#[derive(Debug)]
+pub struct StreamChunk {
+    /// Audio PCM16LE mono
+    pub audio_pcm: Option<Vec<u8>>,
+    /// Vrai si d'autres chunks suivent encore
+    pub has_more: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -199,10 +207,14 @@ impl ServerPing {
         let ts_ms = unsafe { esp_idf_svc::sys::esp_timer_get_time() } / 1000;
         let cid   = format!("edge-{}", ts_ms);
 
-        let audio_b64 = base64_encode(pcm_mono);
+        // Optimisation transfert: retire les silences périphériques et borne la taille.
+        let pcm_net = optimize_pcm_for_network(pcm_mono);
+
+        let audio_b64 = base64_encode(&pcm_net);
         info!(
-            "[SERVER] POST /edge/audio — {} bytes PCM → {} chars B64",
+            "[SERVER] POST /edge/audio — {} -> {} bytes PCM (net) → {} chars B64",
             pcm_mono.len(),
+            pcm_net.len(),
             audio_b64.len()
         );
 
@@ -250,6 +262,91 @@ impl ServerPing {
 
         Ok(parse_audio_response(body_str))
     }
+
+    /// Récupère le chunk audio n°chunk_idx depuis GET /edge/stream/{stream_id}/{chunk_idx}.
+    ///
+    /// Retourne `StreamChunk { audio_pcm, has_more }` ou une erreur.
+    pub fn get_stream_chunk(&mut self, stream_id: &str, chunk_idx: u32) -> Result<StreamChunk> {
+        let url = format!("http://{}:{}/edge/stream/{}/{}", self.host, self.port, stream_id, chunk_idx);
+        info!("[STREAM] GET {} (chunk {})", url, chunk_idx);
+
+        let cfg = HttpConfig {
+            timeout: Some(core::time::Duration::from_millis(15_000)),
+            ..Default::default()
+        };
+        let conn = EspHttpConnection::new(&cfg)?;
+        let mut client = HttpClient::wrap(conn);
+
+        let headers: &[(&str, &str)] = &[];
+        let request = client.request(embedded_svc::http::Method::Get, &url, headers)?;
+        let mut resp = request.submit()?;
+
+        let status = resp.status();
+        if status != 200 {
+            bail!("[STREAM] HTTP {} pour chunk {}", status, chunk_idx);
+        }
+
+        let mut body_bytes: Vec<u8> = Vec::with_capacity(8 * 1024);
+        let mut chunk_buf = [0u8; AUDIO_RESP_CHUNK_SIZE];
+        loop {
+            let n = resp.read(&mut chunk_buf).unwrap_or(0);
+            if n == 0 { break; }
+            if body_bytes.len() + n > AUDIO_RESP_MAX_SIZE {
+                bail!("[STREAM] Chunk trop volumineux");
+            }
+            body_bytes.extend_from_slice(&chunk_buf[..n]);
+        }
+
+        let body_str = core::str::from_utf8(&body_bytes).unwrap_or("");
+        info!("[STREAM] chunk {} reçu {} bytes JSON", chunk_idx, body_bytes.len());
+
+        let audio_pcm = extract_field_owned(body_str, "audio_base64")
+            .and_then(|b64| crate::audio::base64_decode(&b64).ok());
+        let has_more = extract_bool(body_str, "has_more");
+
+        Ok(StreamChunk { audio_pcm, has_more })
+    }
+}
+
+fn optimize_pcm_for_network(pcm_mono: &[u8]) -> Vec<u8> {
+    if pcm_mono.len() < 4 {
+        return pcm_mono.to_vec();
+    }
+
+    let samples = pcm_mono.len() / 2;
+    let mut first_voice: Option<usize> = None;
+    let mut last_voice: usize = 0;
+
+    for i in 0..samples {
+        let b0 = pcm_mono[2 * i];
+        let b1 = pcm_mono[2 * i + 1];
+        let s = i16::from_le_bytes([b0, b1]);
+        if s.unsigned_abs() > NET_SILENCE_THRESHOLD as u16 {
+            if first_voice.is_none() {
+                first_voice = Some(i);
+            }
+            last_voice = i;
+        }
+    }
+
+    let trimmed = if let Some(first) = first_voice {
+        let start = first.saturating_sub(NET_SILENCE_PAD_SAMPLES);
+        let end = (last_voice + NET_SILENCE_PAD_SAMPLES + 1).min(samples);
+        let start_b = start * 2;
+        let end_b = end * 2;
+        pcm_mono[start_b..end_b].to_vec()
+    } else {
+        // Si aucune voix n'est détectée (seuil trop strict, attaque de phrase),
+        // envoyer une fenêtre longue pour laisser une chance au STT.
+        let keep = pcm_mono.len().min(NET_MAX_PCM_BYTES);
+        pcm_mono[..keep].to_vec()
+    };
+
+    if trimmed.len() > NET_MAX_PCM_BYTES {
+        trimmed[..NET_MAX_PCM_BYTES].to_vec()
+    } else {
+        trimmed
+    }
 }
 
 
@@ -258,10 +355,22 @@ fn parse_audio_response(body: &str) -> AudioResponse {
     let audio_pcm = extract_field_owned(body, "audio_base64")
         .and_then(|b64| crate::audio::base64_decode(&b64).ok());
 
+    let has_more = extract_bool(body, "has_more");
+    let stream_id: Option<HString<64>> = if has_more {
+        let s: HString<64> = extract_field(body, "stream_id");
+        if s.is_empty() { None } else { Some(s) }
+    } else {
+        None
+    };
+    let total_chunks = extract_u32(body, "total_chunks").unwrap_or(1);
+
     AudioResponse {
         answer: extract_field(body, "answer"),
         intent: extract_field(body, "intent"),
         audio_pcm,
+        stream_id,
+        has_more,
+        total_chunks,
     }
 }
 
@@ -298,7 +407,29 @@ fn extract_field_owned(body: &str, key: &str) -> Option<String> {
     let end = inner.find('"')?;
     Some(inner[..end].to_owned())
 }
+/// Extrait la valeur d'un champ JSON booléen (true/false).
+fn extract_bool(body: &str, key: &str) -> bool {
+    let needle = format!("\"{}\"" , key);
+    if let Some(pos) = body.find(&needle) {
+        let after = &body[pos + needle.len()..];
+        if let Some(colon) = after.find(':') {
+            let val = after[colon + 1..].trim_start();
+            return val.starts_with("true");
+        }
+    }
+    false
+}
 
+/// Extrait la valeur d'un champ JSON entier (u32).
+fn extract_u32(body: &str, key: &str) -> Option<u32> {
+    let needle = format!("\"{}\"" , key);
+    let pos = body.find(&needle)?;
+    let after = &body[pos + needle.len()..];
+    let colon = after.find(':')?;
+    let val = after[colon + 1..].trim_start();
+    let end = val.find(|c: char| !c.is_ascii_digit()).unwrap_or(val.len());
+    val[..end].parse().ok()
+}
 /// Extraction naïve de "version" depuis {"status":"ok","version":"x.y.z"}
 fn extract_version(body: &str) -> HString<32> {
     let mut result: HString<32> = HString::new();
