@@ -235,9 +235,15 @@ impl LcdDisplay {
         };
 
         // Place EXIO1/EXIO2 en sortie et pulse reset bas -> haut
+        // EXIO5..EXIO8 sont aussi forcées en sortie HIGH : sur certaines revisions,
+        // ces lignes pilotent des enables d'alimentation/peripheriques (audio inclus).
         let mut cfg = Self::tca9554_read_reg(addr, TCA9554_REG_CONFIG)?;
         cfg &= !(1u8 << EXIO_TP_RST);
         cfg &= !(1u8 << EXIO_LCD_RST);
+        cfg &= !(1u8 << 4);
+        cfg &= !(1u8 << 5);
+        cfg &= !(1u8 << 6);
+        cfg &= !(1u8 << 7);
         Self::tca9554_write_reg(addr, TCA9554_REG_CONFIG, cfg)?;
 
         let mut out = Self::tca9554_read_reg(addr, TCA9554_REG_OUTPUT)?;
@@ -248,10 +254,17 @@ impl LcdDisplay {
 
         out |= 1u8 << EXIO_TP_RST;
         out |= 1u8 << EXIO_LCD_RST;
+        out |= 1u8 << 4; // EXIO5
+        out |= 1u8 << 5; // EXIO6
+        out |= 1u8 << 6; // EXIO7
+        out |= 1u8 << 7; // EXIO8
         Self::tca9554_write_reg(addr, TCA9554_REG_OUTPUT, out)?;
         FreeRtos::delay_ms(120);
 
-        info!("TCA9554 détecté @0x{:02X}, TP_RST=EXIO1 et LCD_RST=EXIO2 appliqués", addr);
+        info!(
+            "TCA9554 détecté @0x{:02X}, EXIO1/2 reset appliqués, EXIO5..8 forcés HIGH",
+            addr
+        );
         Ok(())
     }
 

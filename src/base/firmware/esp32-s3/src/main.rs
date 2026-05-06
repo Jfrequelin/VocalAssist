@@ -16,17 +16,19 @@ mod wifi;
 mod server;
 mod touch;
 mod audio;
+mod buffers;
 
 use lcd::LcdDisplay;
 use wifi::WifiManager;
 use server::ServerPing;
 use touch::CST816S;
-use audio::{audio_init, MicCapture};
+use audio::{audio_init, MicCapture, MicCaptureAsync, AudioPlayHandle};
+
+const BOOT_HELLO_WORLD_PCM: &[u8] = include_bytes!("../assets/hello_world_16k_s16le.raw");
 
 const BOOT_BUTTON_GPIO: i32 = 0;
 const LONG_PRESS_RESET_MS: u32 = 3_000;
 const LONG_PRESS_POLL_MS:  u32 = 50;
-
 fn is_boot_button_long_pressed() -> bool {
     unsafe {
         let cfg = esp_idf_svc::sys::gpio_config_t {
@@ -201,16 +203,35 @@ fn main() -> Result<()> {
 
     // ── Phase 1.2 : Initialisation driver I2S microphone ────────────────────
     // Créé une seule fois, réutilisé à chaque cycle READY.
-    let mut mic_opt: Option<MicCapture> = match MicCapture::new(
+    let mut mic_opt: Option<MicCaptureAsync> = match MicCapture::new(
         peripherals.i2s0,
         peripherals.pins.gpio48,  // BCK
         peripherals.pins.gpio38,  // WS / LRCK
         peripherals.pins.gpio39,  // DIN  (ES7210 → ESP32)
+        peripherals.pins.gpio47,  // DOUT (ESP32 → ES8311)
         peripherals.pins.gpio2,   // MCLK
     ) {
-        Ok(m)  => { info!("[P1.2] MicCapture initialisé"); Some(m) }
+        Ok(m) => {
+            info!("[P1.2] MicCapture initialisé");
+            Some(MicCaptureAsync::new(m))
+        }
         Err(e) => { log::warn!("[P1.2] MicCapture échoué: {} — capture désactivée", e); None }
     };
+
+    // Test de lecture directe au boot (sans serveur): phrase "hello world".
+    if let Some(ref mic) = mic_opt {
+        info!("[BOOT] Lecture phrase locale: hello world ({} bytes)", BOOT_HELLO_WORLD_PCM.len());
+        match mic.play_pcm_mono_async(BOOT_HELLO_WORLD_PCM.to_vec()) {
+            Ok(handle) => {
+                if let Err(e) = handle.join().unwrap_or_else(|_| Err(anyhow::anyhow!("thread audio panic"))) {
+                    log::warn!("[BOOT] Lecture hello world échouée: {}", e);
+                } else {
+                    info!("[BOOT] Lecture hello world terminée");
+                }
+            }
+            Err(e) => log::warn!("[BOOT] Impossible de lancer hello world: {}", e),
+        }
+    }
 
     loop {
         // Factory reset toujours surveillé (appui long BOOT)
@@ -231,15 +252,40 @@ fn main() -> Result<()> {
                     FreeRtos::delay_ms(3_000);  // stub si pas de mic
                     Vec::new()
                 };
+                info!("[PIPE] CAPTURE bytes={}", pcm_mono.len());
 
                 // ── Phase 1.3 : POST /edge/audio ─────────────────────────
                 ui::update_ready_state(&mut lcd, ui::DeviceState::Thinking)?;
 
+                let mut audio_handle: Option<AudioPlayHandle> = None;
+
                 let audio_answer = if !pcm_mono.is_empty() {
+                    info!("[PIPE] TX_POST /edge/audio bytes={}", pcm_mono.len());
                     match server.post_audio(&pcm_mono) {
                         Ok(resp) => {
                             info!("[READY] Réponse serveur: intent={} answer={}",
                                 resp.intent, resp.answer);
+
+                            // Lancer la lecture audio en thread séparé (non-bloquant)
+                            if let Some(ref mic) = mic_opt {
+                                if let Some(pcm_from_server) = resp.audio_pcm {
+                                    let audio_size = pcm_from_server.len();
+                                    info!("[PIPE] RX_POST /edge/audio bytes={}", audio_size);
+                                    match mic.play_pcm_mono_async(pcm_from_server) {
+                                        Ok(handle) => {
+                                            info!("[READY] Lecture audio lancée en async ({} bytes)", audio_size);
+                                            info!("[PIPE] PLAYBACK start bytes={}", audio_size);
+                                            audio_handle = Some(handle);
+                                        }
+                                        Err(e) => {
+                                            log::warn!("[READY] Lancement lecture async échoué: {}", e);
+                                        }
+                                    }
+                                } else {
+                                    log::warn!("[PIPE] RX_POST /edge/audio audio_pcm absent");
+                                }
+                            }
+
                             resp.answer
                         }
                         Err(e) => {
@@ -256,11 +302,24 @@ fn main() -> Result<()> {
                     s
                 };
 
-                // ── Phase 1.4 : Affichage réponse + état PARLE ───────────
+                // ── Phase 1.4 : Affichage réponse + état PARLE (non-bloquant) ───
+                // L'audio joue déjà en background → on peut mettre à jour l'écran
                 ui::update_ready_state(&mut lcd, ui::DeviceState::Speaking)?;
                 info!("[READY] Réponse: {}", audio_answer);
-                // Pause courte pour afficher l'état PARLE (TTS I2S à implémenter Phase 1.5)
-                FreeRtos::delay_ms(2_500);
+                // Attendre que l'audio finisse (si lancé) puis revenir au state Idle
+                if let Some(h) = audio_handle {
+                    match h.join() {
+                        Ok(Ok(())) => {
+                            info!("[READY] Lecture audio terminée");
+                            info!("[PIPE] PLAYBACK done");
+                        }
+                        Ok(Err(e)) => log::warn!("[READY] Erreur lecture audio: {}", e),
+                        Err(_) => log::warn!("[READY] Thread audio panic"),
+                    }
+                } else {
+                    // Pas de handle → attendre un peu pour afficher l'état PARLE
+                    FreeRtos::delay_ms(2_500);
+                }
 
                 // Retour Idle → prochain tour de boucle
                 info!("[READY] Cycle terminé → retour Idle");

@@ -417,8 +417,6 @@ const COLOR_FIELD_ACTIVE:   u16 = 0x000A;
 const COLOR_FIELD_INACTIVE: u16 = 0x1082;
 // Vert foncé RGB565 pour bouton OK
 const COLOR_BTN_OK:         u16 = 0x0320;
-// Rouge RGB565 pour erreur
-const COLOR_RED_U16:        u16 = 0xF800;
 
 #[derive(Clone, Copy, PartialEq)]
 enum SrvField { Ip, Port }
@@ -500,8 +498,6 @@ where
 
     let mut active = SrvField::Ip;
     let mut kb_mode = KeyboardMode::Numbers;
-    let mut status: Option<bool> = None;
-
     draw_server_screen_full(lcd, ip.as_str(), port_str.as_str(), active)?;
     keyboard_draw(lcd, kb_mode)?;
 
@@ -536,8 +532,7 @@ where
                 lcd.fill_rect(0, SRV_STATUS_Y - 14, LCD_W, 16, COLOR_BLACK)?;
                 draw_text_color(lcd, "Test en cours...", 80, SRV_STATUS_Y as i32, EG_WHITE)?;
                 let ok = test_fn(ip.as_str(), port_val);
-                status = Some(ok);
-                draw_server_status(lcd, status)?;
+                draw_server_status(lcd, Some(ok))?;
                 FreeRtos::delay_ms(150);
                 continue;
             }
@@ -558,7 +553,6 @@ where
                     keyboard_draw(lcd, kb_mode)?;
                 }
                 KeyPress::Backspace => {
-                    status = None;
                     match active {
                         SrvField::Ip => {
                             if !ip.is_empty() {
@@ -578,7 +572,6 @@ where
                     draw_server_status(lcd, None)?;
                 }
                 KeyPress::Char(c) => {
-                    status = None;
                     match active {
                         SrvField::Ip => {
                             // IP : chiffres, points, lettres (pour noms de domaine éventuels)
@@ -772,9 +765,7 @@ pub fn run_wifi_provisioning(
     let mut password: HString<64> = HString::new();
     let mut reveal_last_until_us: i64 = 0;
 
-    let mut confirmed_password: Option<HString<64>> = None;
-
-    loop {
+    let confirmed_password: HString<64> = loop {
         if reveal_last_until_us > 0 && now_us() >= reveal_last_until_us {
             reveal_last_until_us = 0;
             draw_password_field(lcd, password.as_str(), false)?;
@@ -789,8 +780,7 @@ pub fn run_wifi_provisioning(
             match keyboard_flash_pressed(lcd, p, kb_mode)? {
                 KeyPress::Confirm => {
                     info!("UI: Mot de passe confirmé ({} car.)", password.len());
-                    confirmed_password = Some(password.clone());
-                    break;
+                    break password.clone();
                 }
                 KeyPress::ModeSwitch => {
                     kb_mode = next_mode(kb_mode);
@@ -814,16 +804,12 @@ pub fn run_wifi_provisioning(
             FreeRtos::delay_ms(150);  // anti-rebond
         }
         FreeRtos::delay_ms(50);
-    }
+    };
 
     let mut selected: HString<32> = HString::new();
     for c in selected_ssid.chars() {
         let _ = selected.push(c);
     }
-
-    let Some(confirmed_password) = confirmed_password else {
-        continue 'provision;
-    };
 
     return Ok((selected, confirmed_password));
     }
@@ -840,6 +826,7 @@ pub enum DeviceState {
     Listening,
     Thinking,
     Speaking,
+    #[allow(dead_code)]
     Error,
 }
 

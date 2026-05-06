@@ -22,7 +22,8 @@ const DEFAULT_HOST:         &str = "192.168.1.100";
 const DEFAULT_PORT:         u16  = 8080;
 const TIMEOUT_MS:           u32  = 5_000;
 const RESPONSE_BUF_SIZE:    usize = 256;
-const AUDIO_RESP_BUF_SIZE:  usize = 2048;
+const AUDIO_RESP_CHUNK_SIZE: usize = 2048;
+const AUDIO_RESP_MAX_SIZE:   usize = 350_000;
 
 /// Réponse du serveur à un POST /edge/audio
 #[derive(Debug, Clone)]
@@ -31,6 +32,8 @@ pub struct AudioResponse {
     pub answer: HString<256>,
     /// Intent détecté
     pub intent: HString<64>,
+    /// Audio PCM16LE mono renvoyé par le serveur (optionnel)
+    pub audio_pcm: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -228,10 +231,21 @@ impl ServerPing {
             bail!("[SERVER] HTTP {} depuis /edge/audio", status);
         }
 
-        // Lire la réponse (jusqu'à AUDIO_RESP_BUF_SIZE)
-        let mut buf = [0u8; AUDIO_RESP_BUF_SIZE];
-        let n = resp.read(&mut buf).unwrap_or(0);
-        let body_str = core::str::from_utf8(&buf[..n]).unwrap_or("");
+        // Lire la réponse complète en chunks (nécessaire pour audio_base64).
+        let mut body_bytes: Vec<u8> = Vec::with_capacity(8 * 1024);
+        let mut chunk = [0u8; AUDIO_RESP_CHUNK_SIZE];
+        loop {
+            let n = resp.read(&mut chunk).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            if body_bytes.len() + n > AUDIO_RESP_MAX_SIZE {
+                bail!("[SERVER] Réponse /edge/audio trop volumineuse");
+            }
+            body_bytes.extend_from_slice(&chunk[..n]);
+        }
+
+        let body_str = core::str::from_utf8(&body_bytes).unwrap_or("");
         info!("[SERVER] Réponse body: {}", &body_str[..body_str.len().min(120)]);
 
         Ok(parse_audio_response(body_str))
@@ -241,9 +255,13 @@ impl ServerPing {
 
 /// Extraction naïve de "answer" et "intent" depuis la réponse /edge/audio.
 fn parse_audio_response(body: &str) -> AudioResponse {
+    let audio_pcm = extract_field_owned(body, "audio_base64")
+        .and_then(|b64| crate::audio::base64_decode(&b64).ok());
+
     AudioResponse {
         answer: extract_field(body, "answer"),
         intent: extract_field(body, "intent"),
+        audio_pcm,
     }
 }
 
@@ -264,6 +282,21 @@ fn extract_field<const N: usize>(body: &str, key: &str) -> HString<N> {
         }
     }
     result
+}
+
+/// Extrait la valeur d'un champ JSON string en String allouée.
+fn extract_field_owned(body: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{}\"", key);
+    let pos = body.find(&needle)?;
+    let after = &body[pos + needle.len()..];
+    let colon = after.find(':')?;
+    let val = after[colon + 1..].trim_start();
+    if !val.starts_with('"') {
+        return None;
+    }
+    let inner = &val[1..];
+    let end = inner.find('"')?;
+    Some(inner[..end].to_owned())
 }
 
 /// Extraction naïve de "version" depuis {"status":"ok","version":"x.y.z"}

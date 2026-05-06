@@ -8,6 +8,11 @@ resolver = "2"
 name = "assistant-edge"
 harness = false
 
+[[bin]]
+name = "test-beep"
+path = "test/boot_beep.rs"
+harness = false
+
 [profile.release]
 opt-level = "s"
 

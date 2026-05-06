@@ -207,3 +207,8 @@ Exemple `play_podcast`:
 - slots obligatoires: podcast_name, provider
 - slots optionnels: episode_name, date, position
 - etat: ready_to_execute | needs_clarification | not_found
+
+## References materiel audio
+
+- Datasheet ES8311 (codec audio): https://files.waveshare.com/wiki/common/ES8311.DS.pdf
+- User Guide ES8311: https://files.waveshare.com/wiki/common/ES8311.user.Guide.pdf
