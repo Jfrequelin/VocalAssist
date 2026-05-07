@@ -18,12 +18,17 @@ COPY scripts/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY scripts/server.py .
+COPY scripts/system_prompt.txt .
+COPY scripts/tools/ tools/
 
 # Répertoire persistant pour les modèles Piper (monté en volume)
 VOLUME ["/app/models"]
 
 ENV PIPER_DATA_DIR=/app/models/piper \
-    SERVER_PORT=8080
+    SERVER_PORT=8080 \
+    PYTHONIOENCODING=utf-8 \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
 
 EXPOSE 8080
 

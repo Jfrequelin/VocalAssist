@@ -62,23 +62,35 @@ PIPER_VOICE   = os.getenv("PIPER_VOICE",   "fr_FR-siwis-medium")
 PIPER_DATA_DIR= Path(os.getenv("PIPER_DATA_DIR", "./models/piper"))
 LLM_URL       = os.getenv("LLM_URL",       "http://localhost:11434").rstrip("/")
 LLM_MODEL     = os.getenv("LLM_MODEL",     "llama3.2")
-LLM_SYSTEM    = os.getenv(
-    "LLM_SYSTEM",
+
+# Prompt système : priorité à LLM_SYSTEM (env), sinon fichier dédié, sinon valeur par défaut.
+_SYSTEM_PROMPT_FILE = Path(os.getenv("LLM_SYSTEM_PROMPT_FILE", str(Path(__file__).parent / "system_prompt.txt")))
+_SYSTEM_PROMPT_DEFAULT = (
     "Tu es un assistant vocal francophone polyvalent, intelligent et concis. "
-    "Tu réponds en une ou deux phrases courtes et naturelles, adaptées à être prononcées à voix haute. "
-    "Tu peux répondre à des questions générales, faire des calculs, donner la météo et l'heure. "
-    "Utilise les outils disponibles quand c'est pertinent.",
+    "Tu réponds en une ou deux phrases courtes et naturelles, adaptées à être prononcées à voix haute."
 )
+
+def _load_system_prompt() -> str:
+    if "LLM_SYSTEM" in os.environ:
+        return os.environ["LLM_SYSTEM"]
+    if _SYSTEM_PROMPT_FILE.exists():
+        content = _SYSTEM_PROMPT_FILE.read_text(encoding="utf-8").strip()
+        if content:
+            return content
+    return _SYSTEM_PROMPT_DEFAULT
+
+LLM_SYSTEM = _load_system_prompt()
 LLM_TOOLS_ENABLED = os.getenv("LLM_TOOLS_ENABLED", "true").lower() == "true"
 LOCATION_LAT  = float(os.getenv("LOCATION_LAT",  "48.8566"))  # Paris par défaut
 LOCATION_LON  = float(os.getenv("LOCATION_LON",  "2.3522"))
 LOCATION_NAME = os.getenv("LOCATION_NAME", "Paris")
 SERVER_PORT       = int(os.getenv("SERVER_PORT", "8080"))
 ECHO_FALLBACK     = os.getenv("ECHO_FALLBACK", "false").lower() == "true"
-LLM_MAX_TOKENS    = int(os.getenv("LLM_MAX_TOKENS", "100"))  # tokens max LLM (réponse courte)
+LLM_MAX_TOKENS    = int(os.getenv("LLM_MAX_TOKENS", "60"))   # tokens max LLM (réponse courte)
+LLM_STREAMING     = os.getenv("LLM_STREAMING", "true").lower() == "true"
 # PCM max retourné au firmware : AUDIO_RESP_MAX_SIZE firmware = 350 000 bytes
 # base64(240 000) ≈ 320 000 bytes + overhead JSON ≈ 330 000 < 350 000 ✓
-MAX_TTS_PCM_BYTES = int(os.getenv("MAX_TTS_PCM_BYTES", "240000"))  # ~7,5 s à 16 kHz
+MAX_TTS_PCM_BYTES = int(os.getenv("MAX_TTS_PCM_BYTES", "240000"))  # ~7.5 s à 16 kHz
 _TTS_VOLUME       = [float(os.getenv("TTS_VOLUME", "1.0"))]         # mutable — contrôle vocal
 VOLUME_STATE_FILE = Path(os.getenv("VOLUME_STATE_FILE", "/app/models/piper/tts_volume.json"))
 FIRMWARE_SR   = 16_000   # sample rate attendu par le firmware ESP32
@@ -215,43 +227,94 @@ def _transcribe(pcm: bytes, sample_rate: int) -> str:
     return " ".join(s.text.strip() for s in segments).strip()
 
 
-# ── Outils LLM (tool calling) ────────────────────────────────────────────────
+# ── Registre d'outils LLM ─────────────────────────────────────────────────────
+#
+# Pour ajouter un outil, créer un fichier scripts/tools/<nom>.py contenant :
+#
+#   from tools._registry import tool
+#
+#   @tool(
+#       description="Ce que fait l'outil.",
+#       params={
+#           "arg1": {"type": "string", "description": "..."},
+#       },
+#       required=["arg1"],   # optionnel
+#   )
+#   def mon_outil(arg1: str) -> str:
+#       ...
+#       return "résultat"
+#
+# L'outil est automatiquement enregistré au démarrage du serveur.
 
-_TOOL_DEFS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_datetime",
-            "description": "Retourne la date et l'heure actuelles.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "Retourne la météo actuelle pour le lieu configuré.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "calculate",
-            "description": "Effectue un calcul mathématique simple (ex: 12 * 4.5, 100 / 7).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "expression": {
-                        "type": "string",
-                        "description": "Expression mathématique à évaluer",
-                    }
+class _ToolRegistry:
+    def __init__(self) -> None:
+        self._handlers: dict[str, Any] = {}
+        self._defs: list[dict] = []
+
+    def register(self, name: str, fn: Any, description: str,
+                 params: dict | None = None, required: list[str] | None = None) -> None:
+        self._handlers[name] = fn
+        self._defs.append({
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": description,
+                "parameters": {
+                    "type": "object",
+                    "properties": params or {},
+                    "required": required or [],
                 },
-                "required": ["expression"],
             },
-        },
-    },
-]
+        })
+        logger.info("Outil enregistré : %s", name)
+
+    def tool(self, description: str, params: dict | None = None,
+             required: list[str] | None = None):
+        """Décorateur @tool(description=..., params=..., required=...)"""
+        def decorator(fn: Any) -> Any:
+            self.register(fn.__name__, fn, description, params, required)
+            return fn
+        return decorator
+
+    def execute(self, name: str, args: dict) -> str:
+        fn = self._handlers.get(name)
+        if fn is None:
+            return f"Outil inconnu : {name}"
+        try:
+            return fn(**args)
+        except Exception as exc:
+            logger.warning("Outil '%s' erreur : %s", name, exc)
+            return f"Erreur dans l'outil {name} : {exc}"
+
+    @property
+    def defs(self) -> list[dict]:
+        return self._defs
+
+
+_registry = _ToolRegistry()
+tool = _registry.tool  # raccourci pour les plugins
+
+
+def _load_tool_plugins() -> None:
+    """Charge tous les plugins tools/**.py au démarrage."""
+    tools_dir = Path(__file__).parent / "tools"
+    if not tools_dir.exists():
+        return
+    import importlib.util
+    for path in sorted(tools_dir.glob("*.py")):
+        if path.name.startswith("_"):
+            continue
+        spec = importlib.util.spec_from_file_location(f"tools.{path.stem}", path)
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            # Injecter le registre dans le module plugin
+            mod._registry = _registry  # type: ignore[attr-defined]
+            mod.tool = tool             # type: ignore[attr-defined]
+            try:
+                spec.loader.exec_module(mod)  # type: ignore[union-attr]
+                logger.info("Plugin outil chargé : %s", path.name)
+            except Exception as exc:
+                logger.warning("Plugin '%s' ignoré : %s", path.name, exc)
 
 # Opérateurs autorisés pour la calculatrice sécurisée
 _SAFE_OPS: dict = {
@@ -287,7 +350,8 @@ def _safe_eval(expr: str) -> float:
     return _walk(tree.body)
 
 
-def _tool_get_datetime() -> str:
+@tool(description="Retourne la date et l'heure actuelles.")
+def get_datetime() -> str:
     import datetime
     now = datetime.datetime.now()
     jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
@@ -299,7 +363,8 @@ def _tool_get_datetime() -> str:
     )
 
 
-def _tool_get_weather() -> str:
+@tool(description="Retourne la météo actuelle pour le lieu configuré.")
+def get_weather() -> str:
     url = (
         f"https://api.open-meteo.com/v1/forecast"
         f"?latitude={LOCATION_LAT}&longitude={LOCATION_LON}"
@@ -328,10 +393,14 @@ def _tool_get_weather() -> str:
     return f"À {LOCATION_NAME} : {temp}°C, {desc}, vent {wind} km/h."
 
 
-def _tool_calculate(expression: str) -> str:
+@tool(
+    description="Effectue un calcul mathématique simple (ex: 12 * 4.5, 100 / 7).",
+    params={"expression": {"type": "string", "description": "Expression mathématique à évaluer"}},
+    required=["expression"],
+)
+def calculate(expression: str) -> str:
     try:
         result = _safe_eval(expression)
-        # Affichage propre : entier si possible
         if result == int(result):
             return str(int(result))
         return f"{result:.6g}"
@@ -340,28 +409,73 @@ def _tool_calculate(expression: str) -> str:
 
 
 def _execute_tool(name: str, args_raw: str) -> str:
-    """Exécute un outil et retourne le résultat en chaîne."""
+    """Exécute un outil enregistré et retourne le résultat en chaîne."""
     try:
         args = json.loads(args_raw) if args_raw else {}
     except json.JSONDecodeError:
         args = {}
     logger.info("Outil appelé : %s(%s)", name, args)
-    if name == "get_datetime":
-        return _tool_get_datetime()
-    if name == "get_weather":
-        return _tool_get_weather()
-    if name == "calculate":
-        return _tool_calculate(args.get("expression", ""))
-    return f"Outil inconnu : {name}"
+    return _registry.execute(name, args)
+
+
+# ── Contexte conversationnel ──────────────────────────────────────────────────
+#
+# Une seule conversation active (assistant personnel mono-utilisateur).
+# L'historique est conservé en mémoire entre les requêtes et réinitialisé
+# automatiquement après CTX_TTL_S secondes d'inactivité ou si CTX_MAX_TURNS
+# est dépassé.
+
+CTX_MAX_TURNS = int(os.getenv("CTX_MAX_TURNS", "10"))   # tours user+assistant max
+CTX_TTL_S     = int(os.getenv("CTX_TTL_S",     "300"))  # délai inactivité (s)
+
+class _ConvContext:
+    def __init__(self) -> None:
+        self._history: list[dict] = []   # messages user / assistant / tool
+        self._last_ts: float = 0.0
+
+    def _maybe_reset(self) -> None:
+        if self._last_ts and (time.time() - self._last_ts) > CTX_TTL_S:
+            logger.info("[CTX] Contexte expiré (%.0fs inactivité) — réinitialisation",
+                        time.time() - self._last_ts)
+            self._history = []
+
+    def build(self, user_text: str) -> list[dict]:
+        """Retourne la liste de messages à envoyer au LLM (system + historique + user)."""
+        self._maybe_reset()
+        self._last_ts = time.time()
+        return (
+            [{"role": "system", "content": LLM_SYSTEM}]
+            + self._history
+            + [{"role": "user", "content": user_text}]
+        )
+
+    def commit(self, user_text: str, assistant_text: str,
+               tool_turns: list[dict] | None = None) -> None:
+        """Enregistre un échange terminé dans l'historique."""
+        self._history.append({"role": "user", "content": user_text})
+        if tool_turns:
+            self._history.extend(tool_turns)
+        self._history.append({"role": "assistant", "content": assistant_text})
+        # Élagage : on garde au plus CTX_MAX_TURNS échanges (2 messages chacun)
+        max_msgs = CTX_MAX_TURNS * 2
+        if len(self._history) > max_msgs:
+            self._history = self._history[-max_msgs:]
+        logger.info("[CTX] Historique : %d message(s) conservé(s)", len(self._history))
+
+    def reset(self) -> None:
+        self._history = []
+        self._last_ts = 0.0
+        logger.info("[CTX] Contexte réinitialisé")
+
+
+_ctx = _ConvContext()
 
 
 def _ask_llm(text: str) -> str:
     """Envoie le texte à Ollama avec support du tool calling (max 5 tours)."""
     url = f"{LLM_URL}/v1/chat/completions"
-    messages: list[dict] = [
-        {"role": "system", "content": LLM_SYSTEM},
-        {"role": "user",   "content": text},
-    ]
+    messages = _ctx.build(text)
+    tool_turns: list[dict] = []
     for _turn in range(5):  # garde-fou anti-boucle infinie
         payload: dict = {
             "model":      LLM_MODEL,
@@ -370,7 +484,7 @@ def _ask_llm(text: str) -> str:
             "stream":     False,
         }
         if LLM_TOOLS_ENABLED:
-            payload["tools"]       = _TOOL_DEFS
+            payload["tools"]       = _registry.defs
             payload["tool_choice"] = "auto"
         resp = requests.post(url, json=payload, timeout=60)
         resp.raise_for_status()
@@ -381,26 +495,141 @@ def _ask_llm(text: str) -> str:
 
         if finish == "tool_calls" or msg.get("tool_calls"):
             messages.append(msg)
+            tool_turns.append(msg)
             for tc in msg["tool_calls"]:
                 result = _execute_tool(
                     tc["function"]["name"],
                     tc["function"].get("arguments", "{}"),
                 )
                 logger.info("Outil '%s' → %s", tc["function"]["name"], result)
-                messages.append({
+                tool_msg = {
                     "role":         "tool",
                     "tool_call_id": tc["id"],
                     "content":      result,
-                })
-            continue  # retourner avec le résultat de l'outil
+                }
+                messages.append(tool_msg)
+                tool_turns.append(tool_msg)
+            continue
 
         try:
-            return msg["content"].strip()
+            answer = msg["content"].strip()
+            _ctx.commit(text, answer, tool_turns or None)
+            return answer
         except (KeyError, TypeError) as exc:
             logger.warning("Réponse LLM inattendue : %s — %s", data, exc)
             return str(data)
 
     return "Je n'ai pas pu obtenir une réponse complète."
+
+
+def _split_ready_segments(buffer: str, force_flush: bool = False) -> tuple[list[str], str]:
+    """Extrait des segments de texte prêts à synthèse depuis un buffer incrémental."""
+    segments: list[str] = []
+    remaining = buffer
+
+    # 1) Priorité aux fins de phrases naturelles.
+    while True:
+        m = re.search(r"(.+?[.!?;:])(?:\s+|$)", remaining)
+        if not m:
+            break
+        seg = m.group(1).strip()
+        if seg:
+            segments.append(seg)
+        remaining = remaining[m.end():].lstrip()
+
+    # 2) Si la phrase tarde trop, flush un segment intermédiaire pour réduire la latence.
+    if not force_flush and len(remaining) >= 80:
+        cut = remaining.rfind(" ", 0, 80)
+        if cut <= 0:
+            cut = 80
+        seg = remaining[:cut].strip()
+        if seg:
+            segments.append(seg)
+        remaining = remaining[cut:].lstrip()
+
+    # 3) En fin de stream, vider le reliquat.
+    if force_flush and remaining.strip():
+        segments.append(remaining.strip())
+        remaining = ""
+
+    return segments, remaining
+
+
+def _ask_llm_stream_tts(text: str) -> tuple[str, list[bytes], bool]:
+    """Stream LLM (SSE) et synthèse TTS segmentée à la volée.
+
+    Retourne: (answer_text, tts_chunks, fallback_needed)
+    fallback_needed=True si le modèle demande des tool-calls.
+    """
+    url = f"{LLM_URL}/v1/chat/completions"
+    messages = _ctx.build(text)
+    payload: dict[str, Any] = {
+        "model": LLM_MODEL,
+        "messages": messages,
+        "max_tokens": LLM_MAX_TOKENS,
+        "stream": True,
+    }
+    if LLM_TOOLS_ENABLED:
+        payload["tools"] = _registry.defs
+        payload["tool_choice"] = "auto"
+
+    full_text_parts: list[str] = []
+    pending = ""
+    chunks: list[bytes] = []
+
+    with requests.post(url, json=payload, timeout=90, stream=True) as resp:
+        resp.raise_for_status()
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            if not raw_line:
+                continue
+
+            line = raw_line.strip()
+            if line.startswith("data:"):
+                line = line[5:].strip()
+            if line == "[DONE]":
+                break
+
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            choices = event.get("choices") or []
+            if not choices:
+                continue
+            choice = choices[0]
+            delta = choice.get("delta") or {}
+            finish = choice.get("finish_reason", "")
+
+            # Si des tools sont demandés, on bascule sur le flux non-stream existant.
+            if delta.get("tool_calls") or finish == "tool_calls":
+                logger.info("LLM stream: tool-calls détectés, fallback vers mode non-stream")
+                return "", [], True
+
+            piece = delta.get("content")
+            if not piece:
+                continue
+
+            full_text_parts.append(piece)
+            pending += piece
+
+            ready_segments, pending = _split_ready_segments(pending, force_flush=False)
+            for seg in ready_segments:
+                try:
+                    chunks.append(_tts_to_pcm_16k(seg))
+                except Exception as exc:
+                    logger.warning("TTS segment ignoré '%s': %s", seg[:40], exc)
+
+    # Flush final du buffer.
+    ready_segments, pending = _split_ready_segments(pending, force_flush=True)
+    for seg in ready_segments:
+        try:
+            chunks.append(_tts_to_pcm_16k(seg))
+        except Exception as exc:
+            logger.warning("TTS segment final ignoré '%s': %s", seg[:40], exc)
+
+    answer_text = "".join(full_text_parts).strip()
+    return answer_text, chunks, False
 
 
 def _synthesize(text: str) -> tuple[bytes, int]:
@@ -427,8 +656,90 @@ def _split_sentences(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+_RE_MARKDOWN_BOLD  = re.compile(r'\*{1,3}([^*]+)\*{1,3}')
+_RE_MARKDOWN_CODE  = re.compile(r'`[^`]*`')
+_RE_MARKDOWN_HEAD  = re.compile(r'^#{1,6}\s+', re.MULTILINE)
+_RE_MARKDOWN_LIST  = re.compile(r'^\s*[-*+]\s+', re.MULTILINE)
+_RE_MARKDOWN_LINK  = re.compile(r'\[([^\]]+)\]\([^)]*\)')
+_RE_GUILLEMETS     = re.compile(r'[«»„""\u2018\u2019]')
+_RE_DASH_LONG      = re.compile(r'\s*[—–]\s*')
+_RE_ELLIPSIS       = re.compile(r'\.{2,}|\u2026')
+_RE_EMOJI          = re.compile(
+    r'[\U0001F600-\U0001F64F'
+    r'\U0001F300-\U0001F5FF'
+    r'\U0001F680-\U0001F6FF'
+    r'\U0001F1E0-\U0001F1FF'
+    r'\U00002702-\U000027B0'
+    r'\U000024C2-\U0001F251]+',
+    re.UNICODE,
+)
+
+_UNIT_REPLACEMENTS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r'(\d+)\s*°C'), r'\1 degrés Celsius'),
+    (re.compile(r'(\d+)\s*°F'), r'\1 degrés Fahrenheit'),
+    (re.compile(r'(\d+)\s*°'),  r'\1 degrés'),
+    (re.compile(r'(\d+)\s*%'),  r'\1 pour cent'),
+    (re.compile(r'(\d+)\s*€'),  r'\1 euros'),
+    (re.compile(r'€\s*(\d+)'),  r'\1 euros'),
+    (re.compile(r'\$\s*(\d+)'), r'\1 dollars'),
+    (re.compile(r'(\d+)\s*\$'), r'\1 dollars'),
+    (re.compile(r'(\d+)\s*km/h'), r'\1 kilomètres heure'),
+    (re.compile(r'(\d+)\s*km'), r'\1 kilomètres'),
+    (re.compile(r'(\d+)\s*m²'), r'\1 mètres carrés'),
+    (re.compile(r'(\d+)\s*m³'), r'\1 mètres cubes'),
+    (re.compile(r'(\d+)\s*kWh'), r'\1 kilowattheures'),
+    (re.compile(r'(\d+)\s*kW'), r'\1 kilowatts'),
+    (re.compile(r'(\d+)\s*W'),  r'\1 watts'),
+    (re.compile(r'(\d+)\s*h(\d+)'), r'\1 heures \2'),
+]
+
+
+def _sanitize_for_tts(text: str) -> str:
+    """Nettoie le texte LLM pour qu'il soit lisible par Piper TTS.
+
+    Supprime : markdown, emojis, symboles typographiques.
+    Convertit : unités, guillemets, tirets longs, ellipses.
+    """
+    if not text:
+        return text
+
+    # Markdown : extraire le contenu (ne pas supprimer)
+    text = _RE_MARKDOWN_CODE.sub(lambda m: ' ' + m.group(0)[1:-1] + ' ', text)
+    text = _RE_MARKDOWN_BOLD.sub(r'\1', text)
+
+    # Unités après extraction du markdown
+    for pattern, repl in _UNIT_REPLACEMENTS:
+        text = pattern.sub(repl, text)
+    text = _RE_MARKDOWN_HEAD.sub('', text)
+    text = _RE_MARKDOWN_LIST.sub('', text)
+    text = _RE_MARKDOWN_LINK.sub(r'\1', text)
+
+    # Typographie
+    text = _RE_GUILLEMETS.sub('"', text)
+    text = _RE_DASH_LONG.sub(', ', text)
+    text = _RE_ELLIPSIS.sub('.', text)
+
+    # Emojis
+    text = _RE_EMOJI.sub('', text)
+
+    # Conversion UTF-8 -> ASCII pour fiabiliser la lecture vocale
+    # (suppression des accents et caractères non-ASCII)
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+    # Caractères non-latins résiduels hors ponctuation utile
+    text = re.sub(r'[^\w\s\'\"\-\.,;:!?\(\)]', ' ', text, flags=re.UNICODE)
+
+    # Espaces multiples / sauts de ligne
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    return text
+
+
 def _tts_to_pcm_16k(text: str) -> bytes:
     """Synthétise du texte → PCM16LE 16 kHz (rééchantillonné si besoin)."""
+    text = _sanitize_for_tts(text)
+    if not text:
+        raise ValueError("Texte vide après nettoyage pour TTS")
     tts_pcm, tts_sr = _synthesize(text)
     if tts_sr != FIRMWARE_SR:
         audio_f32 = _pcm16le_to_float32(tts_pcm)
@@ -593,9 +904,11 @@ def _apply_gain(pcm: bytes, gain: float) -> bytes:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     _load_volume_state()
+    _load_tool_plugins()
     _load_whisper()
     _load_piper()
-    logger.info("LLM backend : %s — modèle : %s", LLM_URL, LLM_MODEL)
+    logger.info("LLM backend : %s — modèle : %s — outils : %s",
+                LLM_URL, LLM_MODEL, [d["function"]["name"] for d in _registry.defs])
     yield
 
 
@@ -685,31 +998,53 @@ async def edge_audio(request: Request):  # noqa: C901
 
     # ── 5. Commande volume (sans LLM) ─────────────────────────────────
     vol_response = _handle_volume_command(transcript)
+    prebuilt_chunks: list[bytes] | None = None
     if vol_response is not None:
         answer_text = vol_response
         logger.info("Commande volume → '%s'", answer_text)
     else:
-        # ── 6. LLM ───────────────────────────────────────────────────────
-        try:
-            answer_text = _ask_llm(transcript)
-        except Exception as exc:
-            logger.error("LLM échoué : %s", exc, exc_info=True)
-            answer_text = "Je ne peux pas joindre le modèle de langage pour le moment."
+        # ── 6. LLM (streaming optionnel) ────────────────────────────────
+        if LLM_STREAMING:
+            try:
+                answer_text, prebuilt_chunks, fallback_needed = _ask_llm_stream_tts(transcript)
+                if fallback_needed:
+                    answer_text = _ask_llm(transcript)
+                    prebuilt_chunks = None
+            except Exception as exc:
+                logger.warning("LLM stream indisponible, fallback non-stream: %s", exc)
+                try:
+                    answer_text = _ask_llm(transcript)
+                    prebuilt_chunks = None
+                except Exception as inner_exc:
+                    logger.error("LLM échoué : %s", inner_exc, exc_info=True)
+                    answer_text = "Je ne peux pas joindre le modèle de langage pour le moment."
+                    prebuilt_chunks = None
+        else:
+            try:
+                answer_text = _ask_llm(transcript)
+            except Exception as exc:
+                logger.error("LLM échoué : %s", exc, exc_info=True)
+                answer_text = "Je ne peux pas joindre le modèle de langage pour le moment."
+            prebuilt_chunks = None
         logger.info("LLM → '%s'", answer_text)
 
     # ── 6. TTS streaming par phrases ─────────────────────────────────
     _cleanup_streams()
     try:
-        sentences = _split_sentences(answer_text)
-        if not sentences:
-            sentences = [answer_text]
+        if prebuilt_chunks is not None:
+            chunks = prebuilt_chunks
+            sentences = _split_sentences(answer_text) if answer_text else []
+        else:
+            sentences = _split_sentences(answer_text)
+            if not sentences:
+                sentences = [answer_text]
 
-        chunks: list[bytes] = []
-        for sent in sentences:
-            try:
-                chunks.append(_tts_to_pcm_16k(sent))
-            except Exception as exc:
-                logger.warning("TTS phrase ignorée '%s': %s", sent[:40], exc)
+            chunks = []
+            for sent in sentences:
+                try:
+                    chunks.append(_tts_to_pcm_16k(sent))
+                except Exception as exc:
+                    logger.warning("TTS phrase ignorée '%s': %s", sent[:40], exc)
 
         if not chunks:
             chunks = [_make_tone_pcm16(hz=880, duration_ms=500)]
@@ -749,6 +1084,9 @@ def _build_response(
     stream_id: str | None = None,
     total_chunks: int = 1,
 ) -> dict:
+    # Convertir l'answer en ASCII pour l'affichage LCD (police bitmap ASCII uniquement).
+    import unicodedata as _ud
+    answer_ascii = _ud.normalize("NFKD", answer).encode("ascii", "ignore").decode("ascii").strip()
     resp: dict = {
         "status":         "accepted",
         "api_version":    "v2",
@@ -760,7 +1098,7 @@ def _build_response(
         "channels":       channels,
         "audio_base64":   base64.b64encode(out_pcm).decode(),
         "intent":         intent,
-        "answer":         answer,
+        "answer":         answer_ascii,
         "chunk_index":    0,
         "total_chunks":   total_chunks,
         "has_more":       stream_id is not None,

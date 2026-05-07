@@ -166,7 +166,32 @@ pub fn run() -> Result<()> {
             None => {}
         }
 
-        // Wake word désactivé temporairement — boucle tactile seule pour réactivité maximale
+        // ── Wake word : capture 1 s et envoi à openWakeWord ────────────────
+        if let Some(ref mic) = mic_opt {
+            let ww_pcm = mic.capture_window_mono(1000).unwrap_or_default();
+            if !ww_pcm.is_empty() {
+                match crate::wake_word::check_window(
+                    crate::config::network::DEFAULT_HOST,
+                    &ww_pcm,
+                ) {
+                    Ok(Some(name)) => {
+                        info!("[EDGE] Wake word détecté : '{}'", name);
+                        netlog::info(&format!("[EDGE] Wake word: {}", name));
+                        handle_ready_cycle(&mut lcd, &mut server, &mut mic_opt)?;
+                        ui::draw_ready_screen(
+                            &mut lcd,
+                            ui::DeviceState::Idle,
+                            wifi.is_connected(),
+                            server_ok,
+                        )?;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        log::debug!("[WW] Erreur check_window: {}", e);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -286,32 +311,46 @@ fn handle_ready_cycle(
             }
         };
 
-        // Jouer le premier chunk (dans la réponse POST)
+        // Jouer le premier chunk (dans la réponse POST).
         if let Some(first_pcm) = response.audio_pcm {
             play_chunk(&mic_opt, first_pcm);
         }
 
-        // Récupérer et jouer les chunks suivants si has_more
+        // Récupérer et jouer les chunks suivants si has_more.
         if response.has_more {
             if let Some(ref stream_id) = response.stream_id {
                 let mut chunk_idx: u32 = 1;
                 loop {
-                    netlog::info(&format!("[EDGE] Fetch stream chunk {}/{}", chunk_idx, total));
-                    match server.get_stream_chunk(stream_id.as_str(), chunk_idx) {
-                        Ok(sc) => {
+                    netlog::info(&format!("[EDGE] Fetch chunk {}/{}", chunk_idx, total));
+                    // Fetch avec retry (2 tentatives)
+                    let sc_opt = (0..2u8).find_map(|attempt| {
+                        match server.get_stream_chunk(stream_id.as_str(), chunk_idx) {
+                            Ok(sc) => Some(sc),
+                            Err(e) => {
+                                log::warn!("[EDGE] chunk {} erreur (tentative {}): {}", chunk_idx, attempt + 1, e);
+                                FreeRtos::delay_ms(200);
+                                None
+                            }
+                        }
+                    });
+                    match sc_opt {
+                        Some(sc) => {
+                            let more = sc.has_more;
                             if let Some(pcm) = sc.audio_pcm {
                                 play_chunk(&mic_opt, pcm);
+                            } else {
+                                log::warn!("[EDGE] chunk {} sans audio", chunk_idx);
                             }
-                            if !sc.has_more {
+                            if !more {
                                 info!("[EDGE] Streaming terminé (chunk {})", chunk_idx);
                                 netlog::info(&format!("[EDGE] Streaming done chunk={}", chunk_idx));
                                 break;
                             }
                             chunk_idx += 1;
                         }
-                        Err(e) => {
-                            log::warn!("[EDGE] Erreur fetch chunk {}: {}", chunk_idx, e);
-                            netlog::warn(&format!("[EDGE] Stream chunk {} err: {}", chunk_idx, e));
+                        None => {
+                            log::warn!("[EDGE] Abandon streaming au chunk {}", chunk_idx);
+                            netlog::warn(&format!("[EDGE] Stream abandon chunk={}", chunk_idx));
                             break;
                         }
                     }

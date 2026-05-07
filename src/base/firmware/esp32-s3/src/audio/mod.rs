@@ -307,6 +307,17 @@ fn es8311_config_playback_path() -> Result<()> {
     reg00 = (reg00 & !0x40) | 0x80; // power-on, MSC=0
     i2c_write_reg(ES8311_ADDR, ES8311_REG_RESET, reg00)?;
 
+    // Réécriture des CLKMGR pour forcer le re-lock PLL après un arrêt de MCLK.
+    // Coefficients pour { mclk=4096000, rate=16000, 16bit stéréo }.
+    i2c_write_reg(ES8311_ADDR, ES8311_REG_CLKMGR1, 0x3F)?;
+    i2c_write_reg(ES8311_ADDR, ES8311_REG_CLKMGR2, 0x08)?;
+    i2c_write_reg(ES8311_ADDR, ES8311_REG_CLKMGR3, 0x10)?;
+    i2c_write_reg(ES8311_ADDR, ES8311_REG_CLKMGR4, 0x20)?;
+    i2c_write_reg(ES8311_ADDR, ES8311_REG_CLKMGR5, 0x00)?;
+    i2c_write_reg(ES8311_ADDR, ES8311_REG_CLKMGR6, 0x07)?;
+    i2c_write_reg(ES8311_ADDR, ES8311_REG_CLKMGR7, 0x00)?;
+    i2c_write_reg(ES8311_ADDR, ES8311_REG_CLKMGR8, 0xFF)?;
+
     // Format I2S 16-bit (SDPIN/SDPOUT=0x0C) + chemin DAC explicite.
     i2c_write_reg(ES8311_ADDR, ES8311_REG_SDPIN, 0x0C)?;
     i2c_write_reg(ES8311_ADDR, ES8311_REG_SDPOUT, 0x0C)?;
@@ -830,28 +841,46 @@ impl<'d> MicCapture<'d> {
             peak, adaptive_gain, total_gain
         );
 
-        let mut stereo = Vec::with_capacity((pcm_mono.len() / 2) * 4);
-        for sample in pcm_mono.chunks_exact(2) {
-            let s = i16::from_le_bytes([sample[0], sample[1]]);
-            // Garde une marge de tête pour limiter la distorsion perceptible.
-            let boosted = (s as i32 * total_gain)
-                .clamp(-28_000, 28_000) as i16;
-            let b = boosted.to_le_bytes();
-            stereo.extend_from_slice(&b); // L
-            stereo.extend_from_slice(&b); // R
-        }
-
-        info!("[AUDIO] Lecture {} bytes mono ({} bytes stéréo)", pcm_mono.len(), stereo.len());
+        info!(
+            "[AUDIO] Lecture {} bytes mono (~{} bytes stéréo)",
+            pcm_mono.len(),
+            (pcm_mono.len() / 2) * 4
+        );
+        // Active le MCLK (tx_enable) AVANT de configurer l'ES8311 :
+        // l'ES8311 slave a besoin de MCLK pour locker sa PLL.
+        // Si MCLK s'est arrêté (tx_disable après capture), la PLL doit se re-synchroniser.
+        self.driver.tx_enable()
+            .map_err(|e| anyhow::anyhow!("tx_enable: {:?}", e))?;
+        // Réécriture des registres ES8311 avec MCLK actif.
         es8311_config_playback_path()?;
         es8311_log_state("pre-playback");
-        // Pas de GPIO PA sur cette carte (GPIO_PWR_CTRL=-1, ampli toujours alimenté).
-        // GPIO1 est le MUTE (HIGH=muet) — ne jamais l'activer pendant la lecture.
-        FreeRtos::delay_ms(10);
+        // Délai de re-lock PLL ES8311 (~100-200ms après MCLK stable selon datasheet).
+        FreeRtos::delay_ms(250);
+        // Lecture en flux pour éviter une grosse allocation RAM sur les réponses TTS longues.
+        const MONO_SAMPLES_PER_BLOCK: usize = 512;
+        let mut stereo_block = [0u8; MONO_SAMPLES_PER_BLOCK * 4];
 
-        self.driver.tx_enable().map_err(|e| anyhow::anyhow!("tx_enable: {:?}", e))?;
-        self.driver
-            .write_all(&stereo, PLAYBACK_TIMEOUT_TICKS)
-            .map_err(|e| anyhow::anyhow!("write_all: {:?}", e))?;
+        for mono_block in pcm_mono.chunks(MONO_SAMPLES_PER_BLOCK * 2) {
+            let mut out = 0usize;
+            for sample in mono_block.chunks_exact(2) {
+                let s = i16::from_le_bytes([sample[0], sample[1]]);
+                // Garde une marge de tête pour limiter la distorsion perceptible.
+                let boosted = (s as i32 * total_gain)
+                    .clamp(-28_000, 28_000) as i16;
+                let b = boosted.to_le_bytes();
+                stereo_block[out] = b[0];
+                stereo_block[out + 1] = b[1];
+                stereo_block[out + 2] = b[0];
+                stereo_block[out + 3] = b[1];
+                out += 4;
+            }
+
+            if out > 0 {
+                self.driver
+                    .write_all(&stereo_block[..out], PLAYBACK_TIMEOUT_TICKS)
+                    .map_err(|e| anyhow::anyhow!("write_all: {:?}", e))?;
+            }
+        }
 
         // Laisse le dernier buffer sortir sur I2S avant de couper TX.
         FreeRtos::delay_ms(120);

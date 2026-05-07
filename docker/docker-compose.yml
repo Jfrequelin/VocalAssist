@@ -66,7 +66,7 @@ services:
     ports:
       - "10300:10300"
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "10300"]
+      test: ["CMD", "python3", "-c", "import socket; s=socket.create_connection(('127.0.0.1',10300),2); s.close()"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -91,7 +91,7 @@ services:
     ports:
       - "10200:10200"
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "10200"]
+      test: ["CMD", "python3", "-c", "import socket; s=socket.create_connection(('127.0.0.1',10200),2); s.close()"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -110,7 +110,7 @@ services:
     ports:
       - "10400:10400"
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "10400"]
+      test: ["CMD", "python3", "-c", "import socket; s=socket.create_connection(('127.0.0.1',10400),2); s.close()"]
       interval: 20s
       timeout: 5s
       retries: 5
@@ -132,7 +132,7 @@ services:
               count: 1
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "ollama", "ps"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -151,7 +151,7 @@ services:
       - WHISPER_MODEL=${WHISPER_MODEL:-small}
       - PIPER_VOICE=${PIPER_VOICE:-fr_FR-siwis-medium}
       - LLM_URL=http://localhost:11434
-      - LLM_MODEL=${LLM_MODEL:-llama3.2}
+      - LLM_MODEL=${LLM_MODEL:-mistral}
       - ECHO_FALLBACK=false
       - SERVER_PORT=8080
     volumes:
